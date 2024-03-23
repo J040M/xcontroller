@@ -6,8 +6,27 @@ use tokio_tungstenite::{
     accept_async,
     tungstenite::{Error, Result},
 };
+use serde::{Serialize, Deserialize};
 
 mod serialcom;
+mod commands;
+
+// Defined structure for messages between the server and client
+#[derive(Debug, Serialize, Deserialize)]
+enum MessageType {
+    Operation,
+    Movement,
+    Tools,
+    Config,
+    Information,
+    Special,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Message<'a> {
+    message_type: MessageType,
+    message: &'a str,
+}
 
 // These should be used as defaults
 // But different values should be accepted from incoming
@@ -21,7 +40,7 @@ async fn accept_connection(peer: SocketAddr, stream: TcpStream) {
     if let Err(e) = handle_connection(peer, stream).await {
         match e {
             Error::ConnectionClosed | Error::Protocol(_) | Error::Utf8 => (),
-            err => print!("Error processing connection: {}", err),
+            err => eprintln!("Error processing connection: {}", err),
         }
     }
 }
@@ -37,10 +56,50 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
         let msg = msg?;
         // can also check for binary values
         if msg.is_text() {
-            let data = msg.to_text()?;
             // The data is directly going to the serial_com.
             // Parse and validate the commands.
-            create_serialcom(data)
+            let data = msg.to_text()?;
+            create_serialcom(data);
+
+            // Defining types and parsing that removes the possibility
+            // of having direct commands from FE. +1!
+            match serde_json::from_str::<Message>(&data) {
+                Ok(message) => {
+                    match message.message_type {
+                        MessageType::Config => {
+                            println!("Config: {}", message.message);
+                            let result = commands::config(message.message)?;
+                            create_serialcom(&result)
+                        },
+                        MessageType::Movement => {
+                            println!("Movement: {}", message.message);
+                            let result = commands::movement(message.message)?;
+                            create_serialcom(&result)
+                        },
+                        MessageType::Operation => {
+                            println!("Operation: {}", message.message);
+                            let result = commands::operation(message.message)?;
+                            create_serialcom(&result)
+                        },
+                        MessageType::Tools => {
+                            println!("Tools: {}", message.message);
+                            let result = commands::tools(message.message)?;
+                            create_serialcom(&result)
+                        },
+                        MessageType::Information => {
+                            println!("Information: {}", message.message);
+                            let result = commands::information(message.message)?;
+                            create_serialcom(&result)
+                        },
+                        MessageType::Special => {
+                            println!("Special: {}", message.message);
+                            let result = commands::special(message.message)?;
+                            create_serialcom(&result)
+                        },
+                    }
+                },
+                Err(_) => eprintln!("Failed to parse Message from JSON"),
+            }
         } else {
             eprintln!("No valid text received")
         }
@@ -53,7 +112,7 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
 // The connection can be kept temporarily open to avoid this
 fn create_serialcom(cmd: &str) {
     //Validate the Gcode in &command before converting it
-    let command = format!("G0 {}\r\n", cmd);
+    let command = format!("{}\r\n", cmd);
     let c_inbytes =  command.into_bytes();
     
     // Spawning an async task here could avoid freezing the program
