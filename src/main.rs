@@ -7,6 +7,7 @@ use tokio_tungstenite::{
     tungstenite::{Error, Result},
 };
 use serde::{Serialize, Deserialize};
+use std::env;
 
 mod serialcom;
 mod commands;
@@ -34,6 +35,7 @@ struct Message<'a> {
 static SERIAL_PORT: &str = "/dev/ttyUSB0";
 static BAUD_RATE: u32 = 115200;
 static TIMEOUT: u64 = 1;
+static mut TEST_MODE: bool = false;
 
 // Using TCP/Websockets to get incoming connection //
 async fn accept_connection(peer: SocketAddr, stream: TcpStream) {
@@ -59,7 +61,6 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
             // The data is directly going to the serial_com.
             // Parse and validate the commands.
             let data = msg.to_text()?;
-            create_serialcom(data);
 
             // Defining types and parsing that removes the possibility
             // of having direct commands from FE. +1!
@@ -111,6 +112,11 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
 // This  creates a serial connection for every command
 // The connection can be kept temporarily open to avoid this
 fn create_serialcom(cmd: &str) {
+
+    if unsafe { TEST_MODE } {
+        return;
+    }
+    
     //Validate the Gcode in &command before converting it
     let command = format!("{}\r\n", cmd);
     let c_inbytes =  command.into_bytes();
@@ -135,6 +141,19 @@ fn create_serialcom(cmd: &str) {
 
 #[tokio::main]
 async fn main() {
+    //define TEST_mode
+    let args: Vec<String> = env::args().collect();
+    if args.len() > 1 {
+        println!("TEST_MODE {}", args[1]);
+        let test_arg = args[1].clone();
+        match test_arg.to_lowercase().as_str() {
+            "true" => {
+                unsafe { TEST_MODE = true }
+            },
+            _ => {}
+        }
+    }
+
     let addr = "127.0.0.1:9002";
     let listener = TcpListener::bind(&addr).await.expect("Can't listen");
     
