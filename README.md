@@ -1,6 +1,6 @@
-# Rust Serial Communication with Marlin Firmware
+# Rust Serial Communication for 3D printers
 
-This Rust program demonstrates serial communication with Marlin firmware. It sends a command to the firmware via a serial port and prints the response.
+3D controller written in Rust. Serialcom to send commands to the main board. Websocket server for further communication.
 
 ## Usage
 
