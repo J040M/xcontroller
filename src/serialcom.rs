@@ -1,16 +1,28 @@
 use std::io::{self, Write, Read};
 
-pub fn read_from_port<T: Read>(port: &mut T) -> io::Result<()> {
+pub fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
     let mut serial_buffer: Vec<u8> = vec![0; 256];
     let mut timeout = 0;
+    let mut response_buffer = String::new();
+
     loop {
         match port.read(serial_buffer.as_mut_slice()) {
             // Incoming buffer should be parsed and stored to sent to FE
             Ok(t) => {
                 match std::str::from_utf8(&serial_buffer[0..t]) {
-                    Ok(res) => println!("Received: {}", res),
+                    Ok(res) => {
+                        // println!("Received: {}", res);
+                        response_buffer.push_str(res);
+
+                        // This can lead to wrong return message
+                        // "ok" can also be in the middle and not at the end of the message
+                        if res.contains("ok") {
+                           return Ok(response_buffer);
+                        }
+                    },
                     Err(err) => println!("Invalid UTF-8 sequence: {}", err),
                 }
+                println!("{}", response_buffer);
                 timeout = 0;
             },
             // Check for timeout and stop the communication
@@ -21,6 +33,10 @@ pub fn read_from_port<T: Read>(port: &mut T) -> io::Result<()> {
                 }
             },
             Err(err) => return Err(err),
+        }
+        // Check if the accumulated data contains the expected terminator, such as "ok"
+        if response_buffer.contains("ok") {
+            return Ok(response_buffer); // Return the accumulated data if terminator found
         }
     }
 }

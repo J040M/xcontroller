@@ -129,8 +129,10 @@ fn create_serialcom(cmd: &str) {
                     eprintln!("Failed to send command. Error: {}", e);
                     return;
                 }
-                if let Err(e) = serialcom::read_from_port(&mut port) {
-                    eprintln!("Failed to read port. Error: {}", e);
+                if let Ok(response) = serialcom::read_from_port(&mut port) {
+                    println!("{}", response);
+                } else{
+                    eprintln!("Failed to read port. Error");
                 }
             },
             Err(e) => {
