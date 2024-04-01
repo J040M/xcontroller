@@ -8,6 +8,12 @@
 
 ```cargo build --release```
 
+2. Run the application (dev) - (prod)
+
+```cargo run -- <test_mode_boolean>```
+```./xcontroller -- <test_mode_boolean>```
+
+
 ### Commands
 
 - Operation: Control the activity of the machine. Includes start/stop operation, pause/resume operation.

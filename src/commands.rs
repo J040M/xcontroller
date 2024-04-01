@@ -7,7 +7,7 @@ pub fn operation(cmd: &str) -> Result<&str> {
     let command = cmd.split_whitespace().next().unwrap();
 
     match command {
-        "M0" | "M01" | "M02" | "M06" | "M30" | "M60" | "M98" | "M99" | "M112" | "M120" | "M121" | "M226"
+        "M0" | "M1" | "M2" | "M00" | "M01" | "M02" | "M06" | "M30" | "M60" | "M98" | "M99" | "M112" | "M120" | "M121" | "M226"
         | "M227" | "M228" | "M229" | "M230" | "M240" | "M245" | "M246" | "M600" | "M601" | "M602"
         | "M603" | "M605" | "M606" | "M607" | "M608" | "M650" | "M651" | "M701" | "M702" => Ok(cmd),
         _ => Err(Error::new(ErrorKind::Other, "Invalid command")),
@@ -18,7 +18,7 @@ pub fn movement(cmd: &str) -> Result<&str> {
     let command = cmd.split_whitespace().next().unwrap();
 
     match command {
-        "G00" | "G01" | "G02" | "G03" | "G04" | "G28" | "G30" | "G33" | "G90" | "G91" | "G92" => Ok(cmd),
+        "G0" | "G1" | "G2" | "G3" | "G4" | "G00" | "G01" | "G02" | "G03" | "G04" | "G28" | "G30" | "G33" | "G90" | "G91" | "G92" => Ok(cmd),
         _ => Err(Error::new(ErrorKind::Other, "Invalid command")),
     }
 }
@@ -27,7 +27,7 @@ pub fn tools(cmd: &str) -> Result<&str> {
     let command = cmd.split_whitespace().next().unwrap();
 
     match command {
-        "T" | "S" | "M03" | "M04" | "M05" | "M06" | "M07" | "M08" | "M09" | "M12" | "M13" | "M14" | "G43" | "G44" | "G49" => Ok(cmd),
+        "T" | "S" | "M3" | "M4" | "M5" | "M6" | "M7" | "M8" | "M9" | "M03" | "M04" | "M05" | "M06" | "M07" | "M08" | "M09" | "M12" | "M13" | "M14" | "G43" | "G44" | "G49" => Ok(cmd),
         _ => Err(Error::new(ErrorKind::Other, "Invalid command")),
     }
 }

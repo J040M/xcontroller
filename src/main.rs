@@ -50,7 +50,7 @@ async fn accept_connection(peer: SocketAddr, stream: TcpStream) {
 async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
     let mut ws_stream = accept_async(stream).await.expect("Failed to accept");
 
-    //Socket addresses can be validated to insure only valide peers can connect and send commands
+    // Socket addresses can be validated to insure only valide peers can connect and send commands
     println!("New WebSocket connection: {}", peer);
 
     // Loop over received messages
@@ -141,7 +141,7 @@ fn create_serialcom(cmd: &str) {
 
 #[tokio::main]
 async fn main() {
-    //define TEST_mode
+    // Define TEST_mode
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 {
         println!("TEST_MODE {}", args[1]);
@@ -154,7 +154,9 @@ async fn main() {
         }
     }
 
-    let addr = "127.0.0.1:9002";
+    // Define 127 to accept only local connection.
+    // let addr = "127.0.0.1:9002";
+    let addr = "0.0.0.0:9002";
     let listener = TcpListener::bind(&addr).await.expect("Can't listen");
     
     println!("Listening on: {}", addr);
