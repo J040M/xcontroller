@@ -11,18 +11,16 @@ pub fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
             Ok(t) => {
                 match std::str::from_utf8(&serial_buffer[0..t]) {
                     Ok(res) => {
-                        // println!("Received: {}", res);
                         response_buffer.push_str(res);
 
                         // This can lead to wrong return message
-                        // "ok" can also be in the middle and not at the end of the message
+                        // "ok" can also be in the beginning or middle and not only at the end of the message
                         if res.contains("ok") {
                            return Ok(response_buffer);
                         }
                     },
                     Err(err) => println!("Invalid UTF-8 sequence: {}", err),
                 }
-                println!("{}", response_buffer);
                 timeout = 0;
             },
             // Check for timeout and stop the communication
@@ -33,10 +31,6 @@ pub fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
                 }
             },
             Err(err) => return Err(err),
-        }
-        // Check if the accumulated data contains the expected terminator, such as "ok"
-        if response_buffer.contains("ok") {
-            return Ok(response_buffer); // Return the accumulated data if terminator found
         }
     }
 }
