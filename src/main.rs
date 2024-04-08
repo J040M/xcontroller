@@ -122,40 +122,37 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
 
             // Defining types and parsing that removes the possibility
             // of having direct commands from FE. +1!
+            let command_result: &str;
+            
             match serde_json::from_str::<Message>(&data) {
                 Ok(message) => {
                     match message.message_type {
                         MessageType::Config => {
                             println!("Config: {}", message.message);
-                            let result = commands::config(message.message)?;
-                            create_serialcom(&result, SERIAL_PORT, BAUD_RATE, unsafe { TEST_MODE });
+                            command_result = commands::config(message.message)?;
                         },
                         MessageType::Movement => {
                             println!("Movement: {}", message.message);
-                            let result = commands::movement(message.message)?;
-                            create_serialcom(&result, SERIAL_PORT, BAUD_RATE, unsafe { TEST_MODE });
+                            command_result = commands::config(message.message)?;
                         },
                         MessageType::Operation => {
                             println!("Operation: {}", message.message);
-                            let result = commands::operation(message.message)?;
-                            create_serialcom(&result, SERIAL_PORT, BAUD_RATE, unsafe { TEST_MODE });
+                            command_result = commands::config(message.message)?;
                         },
                         MessageType::Tools => {
                             println!("Tools: {}", message.message);
-                            let result = commands::tools(message.message)?;
-                            create_serialcom(&result, SERIAL_PORT, BAUD_RATE, unsafe { TEST_MODE });
+                            command_result = commands::config(message.message)?;
                         },
                         MessageType::Information => {
                             println!("Information: {}", message.message);
-                            let result = commands::information(message.message)?;
-                            create_serialcom(&result, SERIAL_PORT, BAUD_RATE, unsafe { TEST_MODE });
+                            command_result = commands::config(message.message)?;
                         },
                         MessageType::Special => {
                             println!("Special: {}", message.message);
-                            let result = commands::special(message.message)?;
-                            create_serialcom(&result, SERIAL_PORT, BAUD_RATE, unsafe { TEST_MODE });
+                            command_result = commands::config(message.message)?;
                         },
                     }
+                    create_serialcom(&command_result, SERIAL_PORT, BAUD_RATE, unsafe { TEST_MODE });
                 },
                 Err(_) => eprintln!("Failed to parse Message from JSON"),
             }

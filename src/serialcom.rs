@@ -6,9 +6,10 @@ static TIMEOUT: u64 = 1;
 
 // This  creates a serial connection for every command
 // The connection can be kept temporarily open to avoid this
-pub fn create_serialcom(cmd: &str, SERIAL_PORT: &str, BAUD_RATE: u32, TEST_MODE: bool) {
+pub fn create_serialcom(cmd: &str, serial_port: &str, baud_rate: u32, test_mode: bool) {
 
-    if unsafe { TEST_MODE } {
+    //return without comm with printer
+    if test_mode {
         return;
     }
     
@@ -17,7 +18,7 @@ pub fn create_serialcom(cmd: &str, SERIAL_PORT: &str, BAUD_RATE: u32, TEST_MODE:
     let c_inbytes =  command.into_bytes();
     
     // Spawning an async task here could avoid freezing the program
-    match serialport::new(SERIAL_PORT, BAUD_RATE)
+    match serialport::new(serial_port, baud_rate)
         .timeout(Duration::from_secs(TIMEOUT)).open() {
             Ok(mut port) => {
                 if let Err(e) = write_to_port(&mut port, &c_inbytes) {
@@ -31,7 +32,7 @@ pub fn create_serialcom(cmd: &str, SERIAL_PORT: &str, BAUD_RATE: u32, TEST_MODE:
                 }
             },
             Err(e) => {
-                eprintln!("Failed to open \"{}\". Error: {}", SERIAL_PORT, e);
+                eprintln!("Failed to open \"{}\". Error: {}", serial_port, e);
             },
     }
 }
