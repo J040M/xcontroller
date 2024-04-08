@@ -1,4 +1,40 @@
 use std::io::{self, Write, Read};
+use std::time::Duration;
+use std::u32;
+
+static TIMEOUT: u64 = 1;
+
+// This  creates a serial connection for every command
+// The connection can be kept temporarily open to avoid this
+pub fn create_serialcom(cmd: &str, SERIAL_PORT: &str, BAUD_RATE: u32, TEST_MODE: bool) {
+
+    if unsafe { TEST_MODE } {
+        return;
+    }
+    
+    //Validate the Gcode in &command before converting it
+    let command = format!("{}\r\n", cmd);
+    let c_inbytes =  command.into_bytes();
+    
+    // Spawning an async task here could avoid freezing the program
+    match serialport::new(SERIAL_PORT, BAUD_RATE)
+        .timeout(Duration::from_secs(TIMEOUT)).open() {
+            Ok(mut port) => {
+                if let Err(e) = write_to_port(&mut port, &c_inbytes) {
+                    eprintln!("Failed to send command. Error: {}", e);
+                    return;
+                }
+                if let Ok(response) = read_from_port(&mut port) {
+                    println!("{}", response);
+                } else{
+                    eprintln!("Failed to read port. Error");
+                }
+            },
+            Err(e) => {
+                eprintln!("Failed to open \"{}\". Error: {}", SERIAL_PORT, e);
+            },
+    }
+}
 
 pub fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
     let mut serial_buffer: Vec<u8> = vec![0; 256];

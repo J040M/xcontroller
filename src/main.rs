@@ -1,16 +1,18 @@
 use futures::stream::StreamExt;
-use std::time::Duration;
 use std::net::SocketAddr;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::{
     accept_async,
     tungstenite::{Error, Result},
 };
+
 use serde::{Serialize, Deserialize};
 use std::env;
 
 mod serialcom;
 mod commands;
+
+use crate::serialcom::create_serialcom;
 
 // Defined structure for messages between the server and client
 #[derive(Debug, Serialize, Deserialize)]
@@ -91,7 +93,6 @@ struct Temperatures {
 // connections to insure that other configs are accepted
 static SERIAL_PORT: &str = "/dev/ttyUSB0";
 static BAUD_RATE: u32 = 115200;
-static TIMEOUT: u64 = 1;
 static mut TEST_MODE: bool = false;
 
 // Using TCP/Websockets to get incoming connection //
@@ -127,32 +128,32 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
                         MessageType::Config => {
                             println!("Config: {}", message.message);
                             let result = commands::config(message.message)?;
-                            create_serialcom(&result)
+                            create_serialcom(&result, SERIAL_PORT, BAUD_RATE, unsafe { TEST_MODE });
                         },
                         MessageType::Movement => {
                             println!("Movement: {}", message.message);
                             let result = commands::movement(message.message)?;
-                            create_serialcom(&result)
+                            create_serialcom(&result, SERIAL_PORT, BAUD_RATE, unsafe { TEST_MODE });
                         },
                         MessageType::Operation => {
                             println!("Operation: {}", message.message);
                             let result = commands::operation(message.message)?;
-                            create_serialcom(&result)
+                            create_serialcom(&result, SERIAL_PORT, BAUD_RATE, unsafe { TEST_MODE });
                         },
                         MessageType::Tools => {
                             println!("Tools: {}", message.message);
                             let result = commands::tools(message.message)?;
-                            create_serialcom(&result)
+                            create_serialcom(&result, SERIAL_PORT, BAUD_RATE, unsafe { TEST_MODE });
                         },
                         MessageType::Information => {
                             println!("Information: {}", message.message);
                             let result = commands::information(message.message)?;
-                            create_serialcom(&result)
+                            create_serialcom(&result, SERIAL_PORT, BAUD_RATE, unsafe { TEST_MODE });
                         },
                         MessageType::Special => {
                             println!("Special: {}", message.message);
                             let result = commands::special(message.message)?;
-                            create_serialcom(&result)
+                            create_serialcom(&result, SERIAL_PORT, BAUD_RATE, unsafe { TEST_MODE });
                         },
                     }
                 },
@@ -164,38 +165,6 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
     }
 
     Ok(())
-}
-
-// This  creates a serial connection for every command
-// The connection can be kept temporarily open to avoid this
-fn create_serialcom(cmd: &str) {
-
-    if unsafe { TEST_MODE } {
-        return;
-    }
-    
-    //Validate the Gcode in &command before converting it
-    let command = format!("{}\r\n", cmd);
-    let c_inbytes =  command.into_bytes();
-    
-    // Spawning an async task here could avoid freezing the program
-    match serialport::new(SERIAL_PORT, BAUD_RATE)
-        .timeout(Duration::from_secs(TIMEOUT)).open() {
-            Ok(mut port) => {
-                if let Err(e) = serialcom::write_to_port(&mut port, &c_inbytes) {
-                    eprintln!("Failed to send command. Error: {}", e);
-                    return;
-                }
-                if let Ok(response) = serialcom::read_from_port(&mut port) {
-                    println!("{}", response);
-                } else{
-                    eprintln!("Failed to read port. Error");
-                }
-            },
-            Err(e) => {
-                eprintln!("Failed to open \"{}\". Error: {}", SERIAL_PORT, e);
-            },
-    }
 }
 
 #[tokio::main]
