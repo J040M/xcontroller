@@ -133,23 +133,23 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
                         },
                         MessageType::Movement => {
                             println!("Movement: {}", message.message);
-                            command_result = commands::config(message.message)?;
+                            command_result = commands::movement(message.message)?;
                         },
                         MessageType::Operation => {
                             println!("Operation: {}", message.message);
-                            command_result = commands::config(message.message)?;
+                            command_result = commands::operation(message.message)?;
                         },
                         MessageType::Tools => {
                             println!("Tools: {}", message.message);
-                            command_result = commands::config(message.message)?;
+                            command_result = commands::tools(message.message)?;
                         },
                         MessageType::Information => {
                             println!("Information: {}", message.message);
-                            command_result = commands::config(message.message)?;
+                            command_result = commands::information(message.message)?;
                         },
                         MessageType::Special => {
                             println!("Special: {}", message.message);
-                            command_result = commands::config(message.message)?;
+                            command_result = commands::special(message.message)?;
                         },
                     }
                     create_serialcom(&command_result, SERIAL_PORT, BAUD_RATE, unsafe { TEST_MODE });
