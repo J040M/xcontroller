@@ -114,8 +114,9 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
     // Loop over received messages
     while let Some(msg) = ws_stream.next().await {
         let msg = msg?;
+
         // can also check for binary values
-        if msg.is_text() {
+        if msg.is_text() && !msg.is_empty() {
             // The data is directly going to the serial_com.
             // Parse and validate the commands.
             let data = msg.to_text()?;

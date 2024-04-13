@@ -1,4 +1,6 @@
 use regex::Regex;
+
+pub fn parsing_m20(message: String) {}
 // This will only work for MARLIN. Probably only a certain number versions as well.
 // Will get back to this a little later.
 pub fn parsing_m114(message: String) {
@@ -134,6 +136,7 @@ pub fn parsing_m105(message: String) {
     let re = Regex::new(r"T:([\d.]+)\s/([\d.]+)\sB:([\d.]+)\s/([\d.]+)").unwrap();
 
     // All these keys are not being used, YET!
+    // Also a printer with more extredures won't work with this
     let mut temperatures = Temperatures {
         bed: u8,
         bed_set: u8,
@@ -153,9 +156,11 @@ pub fn parsing_m105(message: String) {
         let bed_temp = captures.get(3).unwrap().as_str();
         let bed_def_temp = captures.get(4).unwrap().as_str();
 
-        temperatures.bed = bed.parse().unwrap_or(0); 
+        temperatures.bed = bed.parse().unwrap_or(0);
         temperatures.bed_set = bed_def_temp.parse().unwrap_or(0);
         temperatures.e0 = nozzle_temp.parse().unwrap_or(0);
         temperatures.e0_set = nozzle_def_temp.parse().unwrap_or(0);
     }
 }
+
+
