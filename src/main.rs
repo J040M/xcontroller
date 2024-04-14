@@ -17,12 +17,8 @@ use crate::serialcom::create_serialcom;
 // Defined structure for messages between the server and client
 #[derive(Debug, Serialize, Deserialize)]
 enum MessageType {
-    Operation,
-    Movement,
-    Tools,
-    Config,
-    Information,
-    Special,
+    GCommand,
+    SerialConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -94,6 +90,7 @@ struct Temperatures {
 static SERIAL_PORT: &str = "/dev/ttyUSB0";
 static BAUD_RATE: u32 = 115200;
 static mut TEST_MODE: bool = false;
+static WS_PORT: &str = "9002";
 
 // Using TCP/Websockets to get incoming connection //
 async fn accept_connection(peer: SocketAddr, stream: TcpStream) {
@@ -121,58 +118,56 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
             // Parse and validate the commands.
             let data = msg.to_text()?;
 
-            // Defining types and parsing that removes the possibility
-            // of having direct commands from FE. +1!
             let command_result: &str;
+
+            let mut serial_com: &str = SERIAL_PORT;
+            let mut baud_rate: u32 = BAUD_RATE;
             
             match serde_json::from_str::<Message>(&data) {
                 Ok(message) => {
                     match message.message_type {
-                        MessageType::Config => {
+                        MessageType::GCommand => {
                             println!("Config: {}", message.message);
-                            command_result = commands::config(message.message)?;
+                            command_result = commands::g_command(message.message)?;
                         },
-                        MessageType::Movement => {
-                            println!("Movement: {}", message.message);
-                            command_result = commands::movement(message.message)?;
-                        },
-                        MessageType::Operation => {
-                            println!("Operation: {}", message.message);
-                            command_result = commands::operation(message.message)?;
-                        },
-                        MessageType::Tools => {
-                            println!("Tools: {}", message.message);
-                            command_result = commands::tools(message.message)?;
-                        },
-                        MessageType::Information => {
-                            println!("Information: {}", message.message);
-                            command_result = commands::information(message.message)?;
-                        },
-                        MessageType::Special => {
-                            println!("Special: {}", message.message);
-                            command_result = commands::special(message.message)?;
+                        MessageType::SerialConfig => {
+                            println!("SerialConfig: {}", message.message);
+                            // Test GCode for printer info
+                            command_result = "M115";
+                            //Expects message.message to be ex: /dev/USBtty01;119200
+                            if let Some((sp, br)) = message.message.split_once(";") {
+                                match br.parse::<u32>() {
+                                    Ok(br) => {
+                                        baud_rate = br
+                                    }
+                                    Err(_) => println!("Failed to parse baudrate for the configuration."),
+                                }
+                                serial_com = sp;
+                            } 
                         },
                     }
-                    create_serialcom(&command_result, SERIAL_PORT, BAUD_RATE, unsafe { TEST_MODE });
+                    create_serialcom(&command_result, serial_com, baud_rate, unsafe { TEST_MODE });
                 },
-                Err(_) => eprintln!("Failed to parse Message from JSON"),
+                Err(_) => eprintln!("Failed to parse message from JSON"),
             }
         } else {
             eprintln!("No valid text received")
         }
     }
-
     Ok(())
 }
 
 #[tokio::main]
 async fn main() {
+
+    let mut ws_port = WS_PORT; 
     // Define TEST_mode
     let args: Vec<String> = env::args().collect();
-    if args.len() > 1 {
+    if args.len() > 2 {
         println!("TEST_MODE {}", args[1]);
-        let test_arg = args[1].clone();
-        match test_arg.to_lowercase().as_str() {
+        let dev_arg = args[1].clone();
+        ws_port = &args[2];
+        match dev_arg.to_lowercase().as_str() {
             "true" => {
                 unsafe { TEST_MODE = true }
             },
@@ -182,10 +177,10 @@ async fn main() {
 
     // Define 127 to accept only local connection.
     // let addr = "127.0.0.1:9002";
-    let addr = "0.0.0.0:9002";
-    let listener = TcpListener::bind(&addr).await.expect("Can't listen");
+    let addr = format!("0.0.0.0:{}", ws_port);
+    let listener = TcpListener::bind(&addr).await.expect("TCP fail to open connection");
     
-    println!("Listening on: {}", addr);
+    println!("Listening on ws://{}", addr);
 
     while let Ok((stream, _)) = listener.accept().await {
         let peer = stream.peer_addr().expect("connected streams should have a peer address");
