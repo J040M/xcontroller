@@ -19,6 +19,7 @@ use crate::serialcom::create_serialcom;
 enum MessageType {
     GCommand,
     SerialConfig,
+    Unsafe,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -84,14 +85,6 @@ struct Temperatures {
     e3_set: u8,
 }
 
-// These should be used as defaults
-// But different values should be accepted from incoming
-// connections to insure that other configs are accepted
-static SERIAL_PORT: &str = "/dev/ttyUSB0";
-static BAUD_RATE: u32 = 115200;
-static mut TEST_MODE: bool = false;
-static WS_PORT: &str = "9002";
-
 // Using TCP/Websockets to get incoming connection //
 async fn accept_connection(peer: SocketAddr, stream: TcpStream) {
     if let Err(e) = handle_connection(peer, stream).await {
@@ -119,9 +112,6 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
             let data = msg.to_text()?;
 
             let command_result: &str;
-
-            let mut serial_com: &str = SERIAL_PORT;
-            let mut baud_rate: u32 = BAUD_RATE;
             
             match serde_json::from_str::<Message>(&data) {
                 Ok(message) => {
@@ -138,15 +128,15 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
                             if let Some((sp, br)) = message.message.split_once(";") {
                                 match br.parse::<u32>() {
                                     Ok(br) => {
-                                        baud_rate = br
+                                        // set_serial_config(sp, br)
                                     }
                                     Err(_) => println!("Failed to parse baudrate for the configuration."),
                                 }
-                                serial_com = sp;
                             } 
                         },
+                        MessageType::Unsafe => todo!(),
                     }
-                    create_serialcom(&command_result, serial_com, baud_rate, unsafe { TEST_MODE });
+                    create_serialcom(&command_result, SERIAL_CONFIG.port, SERIAL_CONFIG.baud_rate, unsafe { TEST_MODE });
                 },
                 Err(_) => eprintln!("Failed to parse message from JSON"),
             }
@@ -156,17 +146,43 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
     }
     Ok(())
 }
+                                    
+use lazy_static::lazy_static;
+
+#[derive(Debug, Clone, Copy)]
+struct SerialConfig {
+    port: &'static str,
+    baud_rate: u32,
+}
+
+impl Default for SerialConfig {
+    fn default() -> Self {
+        SerialConfig {
+            port: "/dev/ttyUSB0",
+            baud_rate: 115200,
+        }
+    }
+}
+lazy_static! {
+    static ref SERIAL_CONFIG: SerialConfig = SerialConfig::default();
+}
+
+
+static mut TEST_MODE: bool = false;
 
 #[tokio::main]
 async fn main() {
+    static WS_PORT: &str = "9002";
 
     let mut ws_port = WS_PORT; 
     // Define TEST_mode
     let args: Vec<String> = env::args().collect();
     if args.len() > 2 {
         println!("TEST_MODE {}", args[1]);
+        
         let dev_arg = args[1].clone();
         ws_port = &args[2];
+        
         match dev_arg.to_lowercase().as_str() {
             "true" => {
                 unsafe { TEST_MODE = true }
@@ -183,7 +199,7 @@ async fn main() {
     println!("Listening on ws://{}", addr);
 
     while let Ok((stream, _)) = listener.accept().await {
-        let peer = stream.peer_addr().expect("connected streams should have a peer address");
+        let peer = stream.peer_addr().expect("Connected streams should have a peer address");
         println!("Peer address: {}", peer);
 
         tokio::spawn(accept_connection(peer, stream));

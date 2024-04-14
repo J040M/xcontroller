@@ -162,5 +162,3 @@ pub fn parsing_m105(message: String) {
         temperatures.e0_set = nozzle_def_temp.parse().unwrap_or(0);
     }
 }
-
-
