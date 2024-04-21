@@ -6,7 +6,7 @@ static TIMEOUT: u64 = 1;
 
 // This  creates a serial connection for every command
 // The connection can be kept temporarily open to avoid this
-pub fn create_serialcom(cmd: &str, serial_port: &str, baud_rate: u32, test_mode: bool) {
+pub fn create_serialcom(cmd: &str, serial_port: String, baud_rate: u32, test_mode: bool) {
 
     //return without comm with printer
     if test_mode {
@@ -18,7 +18,7 @@ pub fn create_serialcom(cmd: &str, serial_port: &str, baud_rate: u32, test_mode:
     let c_inbytes =  command.into_bytes();
     
     // Spawning an async task here could avoid freezing the program
-    match serialport::new(serial_port, baud_rate)
+    match serialport::new(&serial_port, baud_rate)
         .timeout(Duration::from_secs(TIMEOUT)).open() {
             Ok(mut port) => {
                 if let Err(e) = write_to_port(&mut port, &c_inbytes) {
