@@ -85,9 +85,17 @@ struct Temperatures {
     e3_set: u8,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+struct Config<'a> {
+    test_mode:  bool,
+    serial_port: &'a str,
+    baud_rate: u32,
+    ws_port: &'a str
+}
+
 // Using TCP/Websockets to get incoming connection //
-async fn accept_connection(peer: SocketAddr, stream: TcpStream) {
-    if let Err(e) = handle_connection(peer, stream).await {
+async fn accept_connection(peer: SocketAddr, stream: TcpStream, configuration: Config<'_>) {
+    if let Err(e) = handle_connection(peer, stream, configuration).await {
         match e {
             Error::ConnectionClosed | Error::Protocol(_) | Error::Utf8 => (),
             err => eprintln!("Error processing connection: {}", err),
@@ -95,7 +103,7 @@ async fn accept_connection(peer: SocketAddr, stream: TcpStream) {
     }
 }
 
-async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
+async fn handle_connection(peer: SocketAddr, stream: TcpStream, configuration: Config<'_>) -> Result<String, Error> {
     let mut ws_stream = accept_async(stream).await.expect("Failed to accept");
 
     // Socket addresses can be validated to insure only valide peers can connect and send commands
@@ -125,73 +133,64 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<()> {
                             // Test GCode for printer info
                             command_result = "M115";
                             //Expects message.message to be ex: /dev/USBtty01;119200
-
-                            // if let Some((sp, br)) = message.message.split_once(";") {
-                            //     match br.parse::<u32>() {
-                            //         Ok(br) => {
-
-                            //         }
-                            //         Err(_) => println!("Failed to parse baudrate for the configuration."),
-                            //     }
-                            // }
                         }
                         MessageType::Unsafe => todo!(),
                     }
                     create_serialcom(
                         &command_result,
-                        unsafe { SERIAL_PORT.to_string() },
-                        unsafe { BAUD_RATE },
-                        unsafe { TEST_MODE },
+                        configuration.serial_port.to_string(),
+                        configuration.baud_rate,
+                        configuration.test_mode,
                     );
                 }
-                Err(_) => eprintln!("Failed to parse message from JSON"),
+                Err(_) => {
+                    eprintln!("Failed to parse message from JSON");
+                    return Err(Error::ConnectionClosed);
+                },
             }
+
+            return Ok(command_result.to_string())
         } else {
             eprintln!("No valid text received")
         }
     }
-    Ok(())
+    
+    Err(Error::ConnectionClosed)
 }
-
-static mut TEST_MODE: bool = false;
-static mut SERIAL_PORT: &str = "dev/ttyUSB0";
-static mut BAUD_RATE: u32 = 115200;
 
 #[tokio::main]
 async fn main() {
-    static WS_PORT: &str = "9002";
+    let configuration = Config { test_mode: false, serial_port: "dev/ttyUSB0",  baud_rate: 115200, ws_port: "9002" };
 
-    let mut ws_port = WS_PORT;
-    // Define TEST_mode
+    // Define configuration values
     let args: Vec<String> = env::args().collect();
     if args.len() > 4 {
         println!("TEST_MODE {}", args[1]);
-
-        let dev_arg = args[1].clone();
-        let sp_arg = args[2].clone();
+        
+        let ws_port = &args[1].clone(); // Convert String to &str
+        let sp_arg = &args[2].clone();
         let br_arg = args[3].clone();
-
-        ws_port = &args[4];
-
-        match dev_arg.to_lowercase().as_str() {
-            "true" => unsafe { TEST_MODE = true },
-            _ => {}
-        }
-
-        match br_arg.parse::<u32>() {
-            Ok(br) => {
-                unsafe { BAUD_RATE = br }
-                unsafe { SERIAL_PORT = &sp_arg.clone() }
+        let test_arg = args[4].clone();
+    
+        Config {
+            test_mode: match test_arg.to_lowercase().as_str() {
+                "true" => true,
+                _ => false
             },
-            Err(_) => println!("Failed to parse baudrate for the configuration."),
-        }
-
-
+            baud_rate: match br_arg.parse::<u32>() {
+                Ok(br) => br,
+                Err(_) => {
+                    println!("Failed to parse baudrate for the configuration.");
+                    115200 // Default baud rate
+                }
+            },
+            serial_port: sp_arg,
+            ws_port: &ws_port, // No longer borrowing, directly assigning
+        };
     }
-
     // Define 127 to accept only local connection.
     // let addr = "127.0.0.1:9002";
-    let addr = format!("0.0.0.0:{}", ws_port);
+    let addr = format!("0.0.0.0:{}", configuration.ws_port);
     let listener = TcpListener::bind(&addr)
         .await
         .expect("TCP fail to open connection");
@@ -202,8 +201,9 @@ async fn main() {
         let peer = stream
             .peer_addr()
             .expect("Connected streams should have a peer address");
-        println!("Peer address: {}", peer);
-
-        tokio::spawn(accept_connection(peer, stream));
+        
+        tokio::spawn(async move {
+            accept_connection(peer, stream, configuration).await;
+        });
     }
 }
