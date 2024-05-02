@@ -1,35 +1,29 @@
-use futures::stream::StreamExt;
-use std::net::SocketAddr;
-use tokio::net::{TcpListener, TcpStream};
-use tokio_tungstenite::{
-    accept_async,
-    tungstenite::{Error, Result},
-};
-
-use serde::{Deserialize, Serialize};
 use std::env;
+use tokio::net::TcpListener;
+use serde::{Deserialize, Serialize};
 
 mod commands;
 mod serialcom;
+mod wscom;
 
-use crate::serialcom::create_serialcom;
+use crate::wscom::accept_connection;
 
 // Defined structure for messages between the server and client
 #[derive(Debug, Serialize, Deserialize)]
-enum MessageType {
+pub enum MessageType {
     GCommand,
     SerialConfig,
     Unsafe,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct Message<'a> {
+pub struct Message<'a> {
     message_type: MessageType,
     message: &'a str,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct PrinterInfo<'a> {
+pub struct PrinterInfo<'a> {
     firmware_name: &'a str,
     firmware_version: &'a str,
     serial_xon_xoff: u8,
@@ -72,7 +66,7 @@ struct AxePositions {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct Temperatures {
+pub struct Temperatures {
     bed: u8,
     bed_set: u8,
     e0: u8,
@@ -86,76 +80,11 @@ struct Temperatures {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-struct Config<'a> {
+pub struct Config<'a> {
     test_mode:  bool,
     serial_port: &'a str,
     baud_rate: u32,
     ws_port: &'a str
-}
-
-// Using TCP/Websockets to get incoming connection //
-async fn accept_connection(peer: SocketAddr, stream: TcpStream, configuration: Config<'_>) {
-    if let Err(e) = handle_connection(peer, stream, configuration).await {
-        match e {
-            Error::ConnectionClosed | Error::Protocol(_) | Error::Utf8 => (),
-            err => eprintln!("Error processing connection: {}", err),
-        }
-    }
-}
-
-async fn handle_connection(peer: SocketAddr, stream: TcpStream, configuration: Config<'_>) -> Result<String, Error> {
-    let mut ws_stream = accept_async(stream).await.expect("Failed to accept");
-
-    // Socket addresses can be validated to insure only valide peers can connect and send commands
-    println!("New WebSocket connection: {}", peer);
-
-    // Loop over received messages
-    while let Some(msg) = ws_stream.next().await {
-        let msg = msg?;
-
-        // can also check for binary values
-        if msg.is_text() && !msg.is_empty() {
-            // The data is directly going to the serial_com.
-            // Parse and validate the commands.
-            let data = msg.to_text()?;
-
-            let command_result: &str;
-
-            match serde_json::from_str::<Message>(&data) {
-                Ok(message) => {
-                    match message.message_type {
-                        MessageType::GCommand => {
-                            println!("Config: {}", message.message);
-                            command_result = commands::g_command(message.message)?;
-                        }
-                        MessageType::SerialConfig => {
-                            println!("SerialConfig: {}", message.message);
-                            // Test GCode for printer info
-                            command_result = "M115";
-                            //Expects message.message to be ex: /dev/USBtty01;119200
-                        }
-                        MessageType::Unsafe => todo!(),
-                    }
-                    create_serialcom(
-                        &command_result,
-                        configuration.serial_port.to_string(),
-                        configuration.baud_rate,
-                        configuration.test_mode,
-                    );
-                }
-                Err(_) => {
-                    eprintln!("Failed to parse message from JSON");
-                    return Err(Error::ConnectionClosed);
-                },
-            }
-
-            return Ok(command_result.to_string())
-        } else {
-            eprintln!("No valid text received")
-        }
-    }
-    
-    Err(Error::ConnectionClosed)
 }
 
 #[tokio::main]
@@ -191,12 +120,13 @@ async fn main() {
     // Define 127 to accept only local connection.
     // let addr = "127.0.0.1:9002";
     let addr = format!("0.0.0.0:{}", configuration.ws_port);
+    println!("Listening on ws://{}", addr);
+
+    
     let listener = TcpListener::bind(&addr)
         .await
         .expect("TCP fail to open connection");
-
-    println!("Listening on ws://{}", addr);
-
+    
     while let Ok((stream, _)) = listener.accept().await {
         let peer = stream
             .peer_addr()

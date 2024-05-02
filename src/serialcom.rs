@@ -37,7 +37,7 @@ pub fn create_serialcom(cmd: &str, serial_port: String, baud_rate: u32, test_mod
     }
 }
 
-pub fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
+fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
     let mut serial_buffer: Vec<u8> = vec![0; 256];
     let mut timeout = 0;
     let mut response_buffer = String::new();
@@ -72,7 +72,7 @@ pub fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
     }
 }
 
-pub fn write_to_port<T: Write>(port: &mut T, command: &[u8]) -> io::Result<()> {
+fn write_to_port<T: Write>(port: &mut T, command: &[u8]) -> io::Result<()> {
     match port.write_all(command) {
         Ok(_) => {
             println!("Successfully sent command");
