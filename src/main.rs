@@ -1,6 +1,7 @@
 use std::env;
 use tokio::net::TcpListener;
 use serde::{Deserialize, Serialize};
+use log::{ info, warn };
 
 mod commands;
 mod serialcom;
@@ -89,13 +90,14 @@ pub struct Config<'a> {
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+    info!("{}", "Starting application...");
+
     let configuration = Config { test_mode: false, serial_port: "dev/ttyUSB0",  baud_rate: 115200, ws_port: "9002" };
 
     // Define configuration values
     let args: Vec<String> = env::args().collect();
     if args.len() > 4 {
-        println!("TEST_MODE {}", args[1]);
-        
         let ws_port = &args[1].clone(); // Convert String to &str
         let sp_arg = &args[2].clone();
         let br_arg = args[3].clone();
@@ -109,7 +111,8 @@ async fn main() {
             baud_rate: match br_arg.parse::<u32>() {
                 Ok(br) => br,
                 Err(_) => {
-                    println!("Failed to parse baudrate for the configuration.");
+                    warn!("Failed to parse baudrate for the configuration.");
+                    warn!("Using default baudrate 115200.");
                     115200 // Default baud rate
                 }
             },
@@ -120,7 +123,7 @@ async fn main() {
     // Define 127 to accept only local connection.
     // let addr = "127.0.0.1:9002";
     let addr = format!("0.0.0.0:{}", configuration.ws_port);
-    println!("Listening on ws://{}", addr);
+    info!("Listening on ws://{}", addr);
 
     
     let listener = TcpListener::bind(&addr)

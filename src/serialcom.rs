@@ -2,6 +2,8 @@ use std::io::{self, Read, Write};
 use std::time::Duration;
 use std::u32;
 
+use log::{ info, error, debug };
+
 static TIMEOUT: u64 = 1;
 // This  creates a serial connection for every command
 // The connection can be kept temporarily open to avoid this
@@ -22,17 +24,20 @@ pub fn create_serialcom(cmd: &str, serial_port: String, baud_rate: u32, test_mod
     {
         Ok(mut port) => {
             if let Err(e) = write_to_port(&mut port, &c_inbytes) {
-                eprintln!("Failed to send command. Error: {}", e);
+                //Send this message back to WS for broadcast
+                error!("Failed to send command. Error: {}", e);
                 return;
             }
             if let Ok(response) = read_from_port(&mut port) {
-                println!("{}", response);
+                //Send this message back to WS for broadcast
+                info!("{}", response);
             } else {
-                eprintln!("Failed to read port. Error");
+                //Send this message back to WS for broadcast
+                error!("Failed to read comport. Error");
             }
         }
         Err(e) => {
-            eprintln!("Failed to open \"{}\". Error: {}", serial_port, e);
+            error!("Failed to open \"{}\". Error: {}", serial_port, e);
         }
     }
 }
@@ -56,7 +61,9 @@ fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
                             return Ok(response_buffer);
                         }
                     }
-                    Err(err) => println!("Invalid UTF-8 sequence: {}", err),
+                    Err(err) => {
+                        debug!("Invalid UTF-8 sequence: {}", err)
+                    }
                 }
                 timeout = 0;
             }
@@ -64,6 +71,7 @@ fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
             Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
                 timeout += 1;
                 if timeout > 10 {
+                    error!("Timeout on COM exceeded");
                     return Err(io::Error::new(e.kind().clone(), "Timeout limit exceeded"));
                 }
             }
@@ -75,7 +83,7 @@ fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
 fn write_to_port<T: Write>(port: &mut T, command: &[u8]) -> io::Result<()> {
     match port.write_all(command) {
         Ok(_) => {
-            println!("Successfully sent command");
+            debug!("Successfully sent command");
             Ok(())
         }
         Err(e) => Err(e),

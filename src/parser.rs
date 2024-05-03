@@ -1,4 +1,5 @@
 use regex::Regex;
+use log::{ info, debug, error };
 
 pub fn parsing_m20(message: String) {}
 // This will only work for MARLIN. Probably only a certain number versions as well.
@@ -17,7 +18,7 @@ pub fn parsing_m114(message: String) {
                     "Y" => axes.y = value,
                     "Z" => axes.z = value,
                     _ => {
-                        println!("Unmanged value: {}", axe_parts);
+                        debug!("Unmanged value: {}", axe_parts);
                     }
                 }
                 // We are returning so we don't have to deal with the values after "Count"
@@ -69,7 +70,7 @@ pub fn parsing_m115(message: String) {
         if part.contains("FIRMWARE_NAME") {
             let fw_parts: Vec<&str> = part.split(":").collect();
             let fw_version: Vec<&str> = fw_parts[1].split_whitespace().collect();
-            println!("FIRMWRE VERSION: {} {}", fw_version[0], fw_version[1]);
+            debug!("FIRMWRE VERSION: {} {}", fw_version[0], fw_version[1]);
 
             printer_info.firmware_name = fw_version[0];
             printer_info.firmware_version = fw_version[1];
@@ -125,7 +126,7 @@ pub fn parsing_m115(message: String) {
                 }
                 "MEATPACK" => printer_info.meatpack = cap_parts[1].parse().unwrap_or(0),
                 _ => {
-                    println!("Failed to parse value: {}", cap_parts[0])
+                    debug!("Failed to parse | {}", cap_parts[0])
                 }
             }
         }

@@ -5,6 +5,7 @@ use tokio_tungstenite::{
     accept_async,
     tungstenite::{Error, Result},
 };
+use log::{ info, debug, error };
 
 use crate::commands::g_command;
 use crate::serialcom::create_serialcom;
@@ -17,7 +18,7 @@ use crate::MessageType;
 pub async fn accept_connection(peer: SocketAddr, stream: TcpStream, configuration: Config<'_>) {
     match handle_connection(peer, stream).await {
         Ok(command) => {
-            println!("Returned message: {}", command);
+            debug!("Returned message: {}", command);
 
             create_serialcom(
                 &command,
@@ -28,7 +29,7 @@ pub async fn accept_connection(peer: SocketAddr, stream: TcpStream, configuratio
         }
         Err(e) => match e {
             Error::ConnectionClosed | Error::Protocol(_) | Error::Utf8 => (),
-            err => eprintln!("Error processing connection: {}", err),
+            err => error!("Error processing connection: {}", err),
         },
     }
 }
@@ -41,7 +42,7 @@ pub async fn handle_connection(
     let mut ws_stream = accept_async(stream).await.expect("Failed to accept");
 
     // Socket addresses can be validated to insure only valide peers can connect and send commands
-    println!("New client connection: {}", peer);
+    info!("New client | {}", peer);
 
     // Loop over received messages
     while let Some(msg) = ws_stream.next().await {
@@ -53,17 +54,25 @@ pub async fn handle_connection(
             // Parse and validate the commands.
             let data = msg.to_text()?;
 
-            let command_result: &str;
+            let mut command_result: &str;
 
             match serde_json::from_str::<Message>(&data) {
                 Ok(message) => {
                     match message.message_type {
                         MessageType::GCommand => {
-                            println!("Config: {}", message.message);
+                            debug!("Config: {}", message.message);
                             command_result = g_command(message.message)?;
+                            match g_command(message.message) {
+                                Ok(result) => {
+                                    command_result = result
+                                },
+                                Err(_) => {
+                                    error!("Error parsing g_command")
+                                }
+                            }
                         }
                         MessageType::SerialConfig => {
-                            println!("SerialConfig: {}", message.message);
+                            debug!("SerialConfig: {}", message.message);
                             // Test GCode for printer info
                             command_result = "M115";
                             //Expects message.message to be ex: /dev/USBtty01;119200
@@ -73,13 +82,14 @@ pub async fn handle_connection(
                     return Ok(command_result.to_string());
                 }
                 Err(_) => {
-                    eprintln!("Failed to parse message from JSON");
+                    error!("Failed to parse message from JSON");
                 }
             }
         } else {
-            eprintln!("No valid text received")
+            error!("No valid text received");
         }
     }
 
+    error!("ConneectionClosed for {}", peer);
     Err(Error::ConnectionClosed)
 }
