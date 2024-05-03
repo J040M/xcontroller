@@ -8,6 +8,7 @@ use tokio_tungstenite::{
 
 use crate::commands::g_command;
 use crate::serialcom::create_serialcom;
+
 use crate::Config;
 use crate::Message;
 use crate::MessageType;
@@ -17,11 +18,7 @@ pub async fn accept_connection(peer: SocketAddr, stream: TcpStream, configuratio
     match handle_connection(peer, stream).await {
         Ok(command) => {
             println!("Returned message: {}", command);
-            
-            if command.starts_with("*") {
-                return;
-            }
-            
+
             create_serialcom(
                 &command,
                 configuration.serial_port.to_string(),
