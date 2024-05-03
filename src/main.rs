@@ -60,7 +60,7 @@ pub struct PrinterInfo<'a> {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct AxePositions {
+pub struct AxePositions {
     x: i32,
     y: i32,
     z: i32,

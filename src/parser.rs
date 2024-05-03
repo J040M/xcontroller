@@ -1,11 +1,19 @@
 use regex::Regex;
 use log::{ info, debug, error };
 
+use main::{ AxePositions, PrinterInfo};
+
 pub fn parsing_m20(message: String) {}
 // This will only work for MARLIN. Probably only a certain number versions as well.
 // Will get back to this a little later.
-pub fn parsing_m114(message: String) {
+pub fn parsing_m114(message: String) -> Result<AxePositions> {
     let parts: Vec<&str> = message.split("\n").collect();
+    let axes = AxePositions {
+        X: 0,
+        Y: 0,
+        Z: 0,
+    };
+
     for (i, part) in parts.iter().enumerate() {
         let set_parts: Vec<&str> = part.split_whitespace().collect();
         for (i, part) in set_parts.iter().enumerate() {
@@ -13,24 +21,27 @@ pub fn parsing_m114(message: String) {
                 let axe_parts: Vec<&str> = part.split(":").collect();
                 let axis = axe_parts[0];
                 let value: i32 = axe_parts[1].parse().unwrap(); // Parse the value to an integer
+                
                 match axis {
-                    "X" => axes.x = value,
-                    "Y" => axes.y = value,
-                    "Z" => axes.z = value,
+                    "X" => axes.X = value,
+                    "Y" => axes.Y = value,
+                    "Z" => axes.Z = value,
                     _ => {
-                        debug!("Unmanged value: {}", axe_parts);
+                        debug!("Unmanged axis value: {}", axe_parts);
                     }
                 }
-                // We are returning so we don't have to deal with the values after "Count"
+            // We are returning so we don't have to deal with the values after "Count"
             } else if part.contains("Count") || part.contains("ok") {
                 return;
             }
         }
     }
+
+    return axes
 }
 
-pub fn parsing_m115(message: String) {
-    let mut printer_info = PrinterInfo {
+pub fn parsing_m115(message: String) -> Result<PrinterInfo> {
+    let printer_info = PrinterInfo {
         firmware_name: None,
         firmware_version: None,
         serial_xon_xoff: None,
@@ -131,14 +142,16 @@ pub fn parsing_m115(message: String) {
             }
         }
     }
+    
+    return printer_info
 }
 
-pub fn parsing_m105(message: String) {
+pub fn parsing_m105(message: String) -> Result<Temperatures> {
     let re = Regex::new(r"T:([\d.]+)\s/([\d.]+)\sB:([\d.]+)\s/([\d.]+)").unwrap();
 
     // All these keys are not being used, YET!
     // Also a printer with more extredures won't work with this
-    let mut temperatures = Temperatures {
+    let temperatures = Temperatures {
         bed: u8,
         bed_set: u8,
         e0: u8,
@@ -162,4 +175,6 @@ pub fn parsing_m105(message: String) {
         temperatures.e0 = nozzle_temp.parse().unwrap_or(0);
         temperatures.e0_set = nozzle_def_temp.parse().unwrap_or(0);
     }
+
+    return temperatures
 }

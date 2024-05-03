@@ -10,7 +10,9 @@
 
 2. Run the application (dev) - (prod)
 
+
 ```cargo run -- <test_mode_boolean>```
+```RUST_LOG=debug cargo run -- <test_mode_boolean>```
 ```./xcontroller -- <test_mode_boolean>```
 
 
