@@ -6,6 +6,7 @@ use log::{ info, warn };
 mod commands;
 mod serialcom;
 mod wscom;
+mod com_parsing;
 
 use crate::wscom::accept_connection;
 
@@ -15,10 +16,11 @@ pub enum MessageType {
     GCommand,
     SerialConfig,
     Unsafe,
+    MessageSender
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Message<'a> {
+pub struct MessageWS<'a> {
     message_type: MessageType,
     message: &'a str,
 }

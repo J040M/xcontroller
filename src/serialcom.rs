@@ -1,17 +1,30 @@
-use std::io::{self, Read, Write};
-use std::time::Duration;
+use std::io::{self, Error, Read, Write};
+use std::time::{Duration,SystemTime, UNIX_EPOCH};
 use std::u32;
 
 use log::{ info, error, debug };
 
+use crate::com_parsing;
+
 static TIMEOUT: u64 = 1;
 // This  creates a serial connection for every command
 // The connection can be kept temporarily open to avoid this
-pub fn create_serialcom(cmd: &str, serial_port: String, baud_rate: u32, test_mode: bool) {
+pub fn create_serialcom(cmd: &str, serial_port: String, baud_rate: u32, test_mode: bool) -> Result<MessageSender, Error> {
+
+    let now = SystemTime::now();
+    let since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+    let timestamp = since_epoch.as_secs();
     //return without comm with printer
     if test_mode {
-        return;
+        return Ok( MessageSender {
+            message_type: "TestMode",
+            message: "{testmode: true}",
+            raw_message: "testmode:true",
+            timestamp: timestamp,
+        });
     }
+
+    
 
     //Validate the Gcode in &command before converting it
     let command = format!("{}\r\n", cmd);
@@ -25,19 +38,44 @@ pub fn create_serialcom(cmd: &str, serial_port: String, baud_rate: u32, test_mod
         Ok(mut port) => {
             if let Err(e) = write_to_port(&mut port, &c_inbytes) {
                 //Send this message back to WS for broadcast
-                error!("Failed to send command. Error: {}", e);
-                return;
+                error!("Failed to write_to_port | {}", e);
+                return Err(io::Error::new(e.kind().clone(), "Failed to write_to_port"));
             }
+
             if let Ok(response) = read_from_port(&mut port) {
+
+
+                // Parse message
+
+                
                 //Send this message back to WS for broadcast
                 info!("{}", response);
+
+                let parsed_message = com_parsing::initial_parsing(response, command) {
+
+                }
+
+                
+
+                
+
+                let message_sender = MessageSender {
+                    message_type: "MessageSender",
+                    raw_message: &response,
+                    message: parsed_message,
+                    timestamp: timestamp,
+                };
+
+                return Ok(message_sender)
             } else {
                 //Send this message back to WS for broadcast
                 error!("Failed to read comport. Error");
+                return Err(io::Error::new(io::ErrorKind::Other, "Failed to read_from_port"));
             }
         }
         Err(e) => {
             error!("Failed to open \"{}\". Error: {}", serial_port, e);
+            return Err(io::Error::new(io::ErrorKind::Other, "Failed to read_from_port"));
         }
     }
 }

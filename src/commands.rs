@@ -1,9 +1,9 @@
 // This solution might need some more parcing and validation
 // Validating the cmd to the printer data to avoid problematic commands
 
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Error, ErrorKind};
 
-pub fn g_command(cmd: &str) -> Result<&str> {
+pub fn g_command(cmd: &str) -> Result<(&str, &str), Error> {
     let command = cmd.split_whitespace().next().unwrap();
 
     match command {
@@ -46,7 +46,9 @@ pub fn g_command(cmd: &str) -> Result<&str> {
         | "H00" | "H0" | "H01" | "H1" | "H02" | "H2" | "H03" | "H3" | "H04" | "H4" 
         | "H05" | "H5" | "H06" | "H6" | "H07" | "H7" | "H08" | "H8" | "H09" | "H9"
         | "D00" | "D0" | "D01" | "D1" | "D02" | "D2" | "D03" | "D3" | "D04" | "D4" 
-        | "D05" | "D5" | "D06" | "D6" | "D07" | "D7" | "D08" | "D8" | "D09" | "D9" => Ok(cmd),
-        _ => Err(Error::new(ErrorKind::Other, "Invalid command")),
+        | "D05" | "D5" | "D06" | "D6" | "D07" | "D7" | "D08" | "D8" | "D09" | "D9" => return Ok((cmd, command)),
+        _ => {
+            Err(Error::new(ErrorKind::Other, "Invalid command"))
+        },
     }
 }
