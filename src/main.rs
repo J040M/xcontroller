@@ -16,7 +16,6 @@ pub enum MessageType {
     GCommand,
     SerialConfig,
     Unsafe,
-    MessageSender
 }
 
 #[derive(Debug, Serialize, Deserialize)]

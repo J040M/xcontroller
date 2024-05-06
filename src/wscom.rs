@@ -1,33 +1,35 @@
 use futures::{stream::StreamExt, SinkExt};
+use log::{debug, error, info};
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
-    accept_async, 
+    accept_async,
     tungstenite::{Error, Result},
 };
 use tungstenite::Message;
-use log::{ info, debug, error };
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::commands::g_command;
-use serde_json;
 use crate::serialcom::create_serialcom;
+use serde_json;
 
 use crate::Config;
-use crate::MessageWS;
 use crate::MessageType;
+use crate::MessageWS;
 
-
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MessageSender<'a> {
-    message_type:&'a str,
-    message: &'a str,
-    raw_message: &'a str,
-    timestamp: u64,
+    pub message_type: &'a str,
+    pub message: &'a str,
+    pub raw_message: String,
+    pub timestamp: u64,
 }
+
 // Accept incoming connection from client
 pub async fn accept_connection(peer: SocketAddr, stream: TcpStream, configuration: Config<'_>) {
     match handle_connection(peer, stream, configuration).await {
-        Ok(_) => {
-        }
+        Ok(_) => {}
         Err(e) => match e {
             Error::ConnectionClosed | Error::Protocol(_) | Error::Utf8 => (),
             err => error!("Error processing connection: {}", err),
@@ -39,42 +41,37 @@ pub async fn accept_connection(peer: SocketAddr, stream: TcpStream, configuratio
 async fn handle_connection(
     peer: SocketAddr,
     stream: TcpStream,
-    configuration: Config<'_>
+    configuration: Config<'_>,
 ) -> Result<(), Error> {
-    let mut ws_stream = accept_async(stream).await.expect("Failed to accept incoming connection");
+    let ws_stream = accept_async(stream)
+        .await
+        .expect("Failed to accept incoming connection");
 
     // Socket addresses can be validated to insure only valide peers can connect and send commands
     info!("New client | {}", peer);
     let (mut ws_write, mut ws_read) = ws_stream.split();
 
-    let send_message_to_client = |message_to_send: MessageSender| async move {
-
-        let json_str = serde_json::to_string(message_to_send).expect("Failed to serialize myvar into JSON");
-                    let resp_message = Message::Text(json_str.into());
+    //Broadcast message to clients
+    // Broadcast message to clients
+    async fn send_the_command(
+        message: MessageSender<'_>,
+        ws_write: &mut futures::prelude::stream::SplitSink<
+            tokio_tungstenite::WebSocketStream<TcpStream>,
+            Message,
+        >,
+    ) -> Result<()> {
+        let json_str =
+            serde_json::to_string(&message).expect("Failed to serialize myvar into JSON");
+        let resp_message = Message::Text(json_str.into());
 
         if let Err(e) = ws_write.send(resp_message).await {
-            error!("{}", e);
+            // Handle the error here
+            error!("{:?}", e)
         }
-    };
-    // Send message to port and return response to WS client
-    let send_command = |command: &str| async move {
-        match create_serialcom(
-            command,
-            configuration.serial_port.to_string(),
-            configuration.baud_rate,
-            configuration.test_mode) {
-                Ok(response) => {
-                    debug!("{}", response);
-                    //return response to WS clients
-                    send_message_to_client(response)
-                }
-                Err(e) => {
-                    error!("{}", e)
-                }
-            }
-    };
 
-    
+        Ok(())
+    }
+
     // Loop over received messages
     while let Some(msg) = ws_read.next().await {
         let msg = msg?;
@@ -85,48 +82,69 @@ async fn handle_connection(
             // Parse and validate the commands.
             let data = msg.to_text()?;
 
-            let mut cmd: &str;
-            let mut command: &str;
-
             match serde_json::from_str::<MessageWS>(&data) {
                 Ok(message) => {
                     match message.message_type {
                         MessageType::GCommand => {
                             debug!("Config: {}", message.message);
-                            Ok((cmd, command)) = g_command(message.message);
-                            // Handle serialcom response
+                            let result = g_command(message.message);
+                            match result {
+                                Ok(cmd) => {
+                                    match create_serialcom(
+                                        cmd,
+                                        configuration.serial_port.to_string(),
+                                        configuration.baud_rate,
+                                    ) {
+                                        Ok(response) => {
+                                            debug!("{:?}", response);
+
+                                            // Get timestamp
+                                            let now = SystemTime::now();
+                                            let since_epoch = now
+                                                .duration_since(UNIX_EPOCH)
+                                                .expect("Time went backwards");
+                                            let timestamp = since_epoch.as_secs();
+
+                                            // Define response message
+                                            let message_sender = MessageSender {
+                                                message_type: "MessageSender",
+                                                message: "somevalue",
+                                                raw_message: response,
+                                                timestamp: timestamp,
+                                            };
+
+                                            //return response to WS clients
+                                            send_the_command(message_sender, &mut ws_write).await?;
+                                        }
+                                        Err(e) => {
+                                            error!("{:?}", e)
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    // DO something else
+                                    error!("{:?}", e)
+                                }
+                            }
                         }
                         MessageType::SerialConfig => {
                             debug!("SerialConfig: {}", message.message);
                             // Test GCode for printer info
-                            cmd = "M115";
+                            // cmd = "M115";
                             //Expects message.message to be ex: /dev/USBtty01;119200
                         }
                         MessageType::Unsafe => todo!(),
-                        MessageType::MessageSender => todo!(),
                     }
-                    send_command(cmd);
-                    
+                    // send_command(cmd);
+                    // send_the_command(message, ws_write).await?;
                 }
-                Err(_) => {
-                    error!("Failed to parse message from JSON");
-                }
+                Err(_) => todo!(),
             }
-        } else {
-            error!("No valid text received");
         }
     }
-
 
     // Can add a timeout to regularly send status updates
 
     error!("ConnectionClosed for {}", peer);
     Err(Error::ConnectionClosed)
-}
-
-// Send message to connected clients
-async fn broadcast_message(message: String) {
-    debug!("BROADCAST | {}", message)
-
-
 }

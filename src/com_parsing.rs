@@ -1,8 +1,8 @@
 // Initial Com parsing serves to find the firmware
 pub fn initial_parsing(response: String, command: String) {
-    match command {
-        ""
-    }
+    // match command {
+    //     "asd".to_owned() => todo!()
+    // }
 }
 
 // Will be starting with marlin
