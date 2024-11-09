@@ -84,6 +84,7 @@ async fn handle_connection(
 
             match serde_json::from_str::<MessageWS>(&data) {
                 Ok(message) => {
+                    info!("Received message");
                     match message.message_type {
                         MessageType::GCommand => {
                             debug!("Config: {}", message.message);

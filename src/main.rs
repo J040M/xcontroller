@@ -94,7 +94,7 @@ async fn main() {
     env_logger::init();
     info!("{}", "Starting application...");
 
-    let configuration = Config { test_mode: false, serial_port: "dev/ttyUSB0",  baud_rate: 115200, ws_port: "9002" };
+    let configuration = Config { test_mode: false, serial_port: "/dev/ttyUSB0",  baud_rate: 115200, ws_port: "9002" };
 
     // Define configuration values
     let args: Vec<String> = env::args().collect();
