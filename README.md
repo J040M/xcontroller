@@ -8,13 +8,13 @@
 
 ```cargo build --release```
 
-2. Run the application (dev) - (prod)
-
+2. Run the application - Development
 
 ```cargo run -- <test_mode_boolean>```
 ```RUST_LOG=debug cargo run -- <test_mode_boolean>```
-```./xcontroller -- <test_mode_boolean>```
 
+Execute binary
+```./xcontroller -- <test_mode_boolean>```
 
 ### Commands
 
