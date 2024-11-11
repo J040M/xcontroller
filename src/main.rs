@@ -1,12 +1,11 @@
+use log::{info, warn};
+use serde::{Deserialize, Serialize};
 use std::env;
 use tokio::net::TcpListener;
-use serde::{Deserialize, Serialize};
-use log::{ info, warn };
 
 mod commands;
 mod serialcom;
 mod wscom;
-mod com_parsing;
 
 use crate::wscom::accept_connection;
 
@@ -83,18 +82,24 @@ pub struct Temperatures {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Config<'a> {
-    test_mode:  bool,
+    test_mode: bool,
     serial_port: &'a str,
     baud_rate: u32,
-    ws_port: &'a str
+    ws_port: &'a str,
 }
 
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    info!("{}", "Starting application...");
 
-    let configuration = Config { test_mode: false, serial_port: "/dev/ttyUSB0",  baud_rate: 115200, ws_port: "9002" };
+    info!("Starting application...");
+
+    let configuration = Config {
+        test_mode: false,
+        serial_port: "/dev/ttyUSB0",
+        baud_rate: 115200,
+        ws_port: "9002",
+    };
 
     // Define configuration values
     let args: Vec<String> = env::args().collect();
@@ -103,11 +108,11 @@ async fn main() {
         let sp_arg = &args[2].clone();
         let br_arg = args[3].clone();
         let test_arg = args[4].clone();
-    
+
         Config {
             test_mode: match test_arg.to_lowercase().as_str() {
                 "true" => true,
-                _ => false
+                _ => false,
             },
             baud_rate: match br_arg.parse::<u32>() {
                 Ok(br) => br,
@@ -126,16 +131,15 @@ async fn main() {
     let addr = format!("0.0.0.0:{}", configuration.ws_port);
     info!("Listening on ws://{}", addr);
 
-    
     let listener = TcpListener::bind(&addr)
         .await
         .expect("TCP fail to open connection");
-    
+
     while let Ok((stream, _)) = listener.accept().await {
         let peer = stream
             .peer_addr()
             .expect("Connected streams should have a peer address");
-        
+
         tokio::spawn(async move {
             accept_connection(peer, stream, configuration).await;
         });

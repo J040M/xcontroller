@@ -19,7 +19,7 @@ ok T:21.17 /0.00 B:20.31 /0.00
 ## M106
 ok
 
-## M1077
+## M107
 ok
 
 ## M114
@@ -72,7 +72,6 @@ ok
 *Not response!?
 **
 In Marlin firmware, the "M503" command doesn't typically return anything directly to the terminal or interface you're using to send commands to the printer. Instead, it reports the current settings stored in the EEPROM (Electrically Erasable Programmable Read-Only Memory) directly to the printer's controller. This information is then usually accessed through the printer's interface, such as an LCD screen or a connected computer running printer control software.
-
 
 ## G28
 echo:busy: processing

@@ -2,13 +2,13 @@ use futures::{stream::StreamExt, SinkExt};
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
     accept_async,
     tungstenite::{Error, Result},
 };
 use tungstenite::Message;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::commands::g_command;
 use crate::serialcom::create_serialcom;
@@ -53,7 +53,7 @@ async fn handle_connection(
 
     //Broadcast message to clients
     // Broadcast message to clients
-    async fn send_the_command(
+    async fn send_message_back(
         message: MessageSender<'_>,
         ws_write: &mut futures::prelude::stream::SplitSink<
             tokio_tungstenite::WebSocketStream<TcpStream>,
@@ -84,7 +84,11 @@ async fn handle_connection(
 
             match serde_json::from_str::<MessageWS>(&data) {
                 Ok(message) => {
-                    info!("Received message");
+                    info!("Message received: {}", message.message);
+
+                    // Starting timestamp
+                    let now = SystemTime::now();
+
                     match message.message_type {
                         MessageType::GCommand => {
                             debug!("Config: {}", message.message);
@@ -99,8 +103,7 @@ async fn handle_connection(
                                         Ok(response) => {
                                             debug!("{:?}", response);
 
-                                            // Get timestamp
-                                            let now = SystemTime::now();
+                                            // Set timestamp
                                             let since_epoch = now
                                                 .duration_since(UNIX_EPOCH)
                                                 .expect("Time went backwards");
@@ -115,7 +118,8 @@ async fn handle_connection(
                                             };
 
                                             //return response to WS clients
-                                            send_the_command(message_sender, &mut ws_write).await?;
+                                            send_message_back(message_sender, &mut ws_write)
+                                                .await?;
                                         }
                                         Err(e) => {
                                             error!("{:?}", e)
@@ -134,10 +138,56 @@ async fn handle_connection(
                             // cmd = "M115";
                             //Expects message.message to be ex: /dev/USBtty01;119200
                         }
-                        MessageType::Unsafe => todo!(),
+                        MessageType::Unsafe => {
+                            let cmd = message.message;
+                            match create_serialcom(
+                                cmd,
+                                configuration.serial_port.to_string(),
+                                configuration.baud_rate,
+                            ) {
+                                Ok(response) => {
+                                    debug!("{:?}", response);
+
+                                    // Get timestamp
+                                    let since_epoch = now
+                                        .duration_since(UNIX_EPOCH)
+                                        .expect("Time went backwards");
+                                    let timestamp = since_epoch.as_secs();
+
+                                    // Define response message
+                                    let message_sender = MessageSender {
+                                        message_type: "MessageSender",
+                                        message: &response.clone(),
+                                        raw_message: response,
+                                        timestamp: timestamp,
+                                    };
+
+                                    //return response to WS clients
+                                    send_message_back(message_sender, &mut ws_write).await?;
+                                }
+                                Err(e) => {
+                                    error!("{:?}", e);
+
+                                    let since_epoch = now
+                                        .duration_since(UNIX_EPOCH)
+                                        .expect("Time went backwards");
+                                    let timestamp = since_epoch.as_secs();
+
+                                    // Define response message
+                                    let message_sender = MessageSender {
+                                        message_type: "MessageSenderError",
+                                        message: "Error executing command",
+                                        raw_message: "Error executing command".to_string(),
+                                        timestamp: timestamp,
+                                    };
+
+                                    //return response to WS clients
+                                    send_message_back(message_sender, &mut ws_write).await?;
+                                }
+                            }
+                        }
                     }
-                    // send_command(cmd);
-                    // send_the_command(message, ws_write).await?;
+                    // send_command(message, ws_write).await?;
                 }
                 Err(_) => todo!(),
             }
