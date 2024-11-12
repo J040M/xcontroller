@@ -27,7 +27,7 @@ pub struct MessageSender<'a> {
 }
 
 // Accept incoming connection from client
-pub async fn accept_connection(peer: SocketAddr, stream: TcpStream, configuration: Config<'_>) {
+pub async fn accept_connection(peer: SocketAddr, stream: TcpStream, configuration: Config) {
     match handle_connection(peer, stream, configuration).await {
         Ok(_) => {}
         Err(e) => match e {
@@ -41,7 +41,7 @@ pub async fn accept_connection(peer: SocketAddr, stream: TcpStream, configuratio
 async fn handle_connection(
     peer: SocketAddr,
     stream: TcpStream,
-    configuration: Config<'_>,
+    configuration: Config,
 ) -> Result<(), Error> {
     let ws_stream = accept_async(stream)
         .await

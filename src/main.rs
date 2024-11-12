@@ -80,12 +80,12 @@ pub struct Temperatures {
     e3_set: u8,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct Config<'a> {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Config {
     test_mode: bool,
-    serial_port: &'a str,
+    serial_port: String,
     baud_rate: u32,
-    ws_port: &'a str,
+    ws_port: String,
 }
 
 #[tokio::main]
@@ -94,22 +94,22 @@ async fn main() {
 
     info!("Starting application...");
 
-    let configuration = Config {
+    let mut configuration = Config {
         test_mode: false,
-        serial_port: "/dev/ttyUSB0",
+        serial_port: "/dev/ttyUSB0".to_string(),
         baud_rate: 115200,
-        ws_port: "9002",
+        ws_port: "9002".to_string(),
     };
 
     // Define configuration values
     let args: Vec<String> = env::args().collect();
     if args.len() > 4 {
-        let ws_port = &args[1].clone(); // Convert String to &str
-        let sp_arg = &args[2].clone();
+        let ws_port = args[1].clone(); // Convert String to &str
+        let sp_arg = args[2].clone();
         let br_arg = args[3].clone();
-        let test_arg = args[4].clone();
+        let test_arg = &args[4].clone();
 
-        Config {
+        configuration = Config {
             test_mode: match test_arg.to_lowercase().as_str() {
                 "true" => true,
                 _ => false,
@@ -123,11 +123,15 @@ async fn main() {
                 }
             },
             serial_port: sp_arg,
-            ws_port: &ws_port, // No longer borrowing, directly assigning
+            ws_port: ws_port,
         };
+
+
+        println!("{:?}", configuration)
     }
     // Define 127 to accept only local connection.
     // let addr = "127.0.0.1:9002";
+
     let addr = format!("0.0.0.0:{}", configuration.ws_port);
     info!("Listening on ws://{}", addr);
 
@@ -140,8 +144,12 @@ async fn main() {
             .peer_addr()
             .expect("Connected streams should have a peer address");
 
+        let cloned_configuration = configuration.clone();
+
+        println!("Running with config: {:?}", cloned_configuration);
+    
         tokio::spawn(async move {
-            accept_connection(peer, stream, configuration).await;
+            accept_connection(peer, stream, cloned_configuration).await;
         });
     }
 }

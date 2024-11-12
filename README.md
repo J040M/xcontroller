@@ -16,6 +16,16 @@
 Execute binary
 ```./xcontroller -- <test_mode_boolean>```
 
+3. Run the application with defined
+``` ./xcontroller -- <websocket_port_value> <serial_port_string> <baudrate_value> <test_mode_boolean>```
+
+Note:
+Running the program without params it will fall into default values.
+
+Default
+
+``` Config { test_mode: false, serial_port: /dev/ttyUSB0, baud_rate: 115200, ws_port: 9002} ```
+
 ### Commands
 
 - Operation: Control the activity of the machine. Includes start/stop operation, pause/resume operation.
