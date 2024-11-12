@@ -12,7 +12,6 @@ use tungstenite::Message;
 
 use crate::commands::g_command;
 use crate::serialcom::create_serialcom;
-use serde_json;
 
 use crate::Config;
 use crate::MessageType;
@@ -62,7 +61,7 @@ async fn handle_connection(
     ) -> Result<()> {
         let json_str =
             serde_json::to_string(&message).expect("Failed to serialize myvar into JSON");
-        let resp_message = Message::Text(json_str.into());
+        let resp_message = Message::Text(json_str);
 
         if let Err(e) = ws_write.send(resp_message).await {
             // Handle the error here
@@ -82,7 +81,7 @@ async fn handle_connection(
             // Parse and validate the commands.
             let data = msg.to_text()?;
 
-            match serde_json::from_str::<MessageWS>(&data) {
+            match serde_json::from_str::<MessageWS>(data) {
                 Ok(message) => {
                     info!("Message received: {}", message.message);
 
@@ -112,9 +111,9 @@ async fn handle_connection(
                                             // Define response message
                                             let message_sender = MessageSender {
                                                 message_type: "MessageSender",
-                                                message: "somevalue",
+                                                message: &response.clone(),
                                                 raw_message: response,
-                                                timestamp: timestamp,
+                                                timestamp,
                                             };
 
                                             //return response to WS clients
@@ -127,7 +126,6 @@ async fn handle_connection(
                                     }
                                 }
                                 Err(e) => {
-                                    // DO something else
                                     error!("{:?}", e)
                                 }
                             }
@@ -154,15 +152,13 @@ async fn handle_connection(
                                         .expect("Time went backwards");
                                     let timestamp = since_epoch.as_secs();
 
-                                    // Define response message
                                     let message_sender = MessageSender {
                                         message_type: "MessageSender",
                                         message: &response.clone(),
                                         raw_message: response,
-                                        timestamp: timestamp,
+                                        timestamp,
                                     };
 
-                                    //return response to WS clients
                                     send_message_back(message_sender, &mut ws_write).await?;
                                 }
                                 Err(e) => {
@@ -178,23 +174,19 @@ async fn handle_connection(
                                         message_type: "MessageSenderError",
                                         message: "Error executing command",
                                         raw_message: "Error executing command".to_string(),
-                                        timestamp: timestamp,
+                                        timestamp,
                                     };
 
-                                    //return response to WS clients
                                     send_message_back(message_sender, &mut ws_write).await?;
                                 }
                             }
                         }
                     }
-                    // send_command(message, ws_write).await?;
                 }
                 Err(_) => todo!(),
             }
         }
     }
-
-    // Can add a timeout to regularly send status updates
 
     error!("ConnectionClosed for {}", peer);
     Err(Error::ConnectionClosed)

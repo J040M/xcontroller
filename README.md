@@ -12,6 +12,7 @@
 
 ```cargo run -- <test_mode_boolean>```
 ```RUST_LOG=debug cargo run -- <test_mode_boolean>```
+Windows: ``` $env:RUST_LOG="debug"; cargo run```
 
 Execute binary
 ```./xcontroller -- <test_mode_boolean>```

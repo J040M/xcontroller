@@ -1,8 +1,6 @@
+use log::{debug, error, info};
 use std::io::{self, Read, Write};
 use std::time::Duration;
-use std::u32;
-
-use log::{debug, error, info};
 
 static TIMEOUT: u64 = 1;
 
@@ -13,7 +11,6 @@ pub fn create_serialcom(cmd: &str, serial_port: String, baud_rate: u32) -> Resul
     let command = format!("{}\r\n", cmd);
     let c_inbytes = command.into_bytes();
 
-    // Spawning an async task here could avoid freezing the program
     match serialport::new(&serial_port, baud_rate)
         .timeout(Duration::from_secs(TIMEOUT))
         .open()
@@ -22,7 +19,6 @@ pub fn create_serialcom(cmd: &str, serial_port: String, baud_rate: u32) -> Resul
             if let Err(e) = write_to_port(&mut port, &c_inbytes) {
                 //Send this message back to WS for broadcast
                 error!("Failed to write_to_port | {}", e);
-
                 return Err(());
             }
 
@@ -31,18 +27,16 @@ pub fn create_serialcom(cmd: &str, serial_port: String, baud_rate: u32) -> Resul
                 //Send this message back to WS for broadcast
                 info!("{}", response);
 
-                return Ok(response);
+                Ok(response)
             } else {
                 //Send this message back to WS for broadcast
                 error!("Failed to read comport. Error");
-                // return Err(io::Error::new(io::ErrorKind::Other, "Failed to read_from_port"));
-                return Err(());
+                Err(())
             }
         }
         Err(e) => {
             error!("Failed to open \"{}\". Error: {}", serial_port, e);
-            // return Err(io::Error::new(io::ErrorKind::Other, "Failed to read_from_port"));
-            return Err(());
+            Err(())
         }
     }
 }
@@ -77,7 +71,7 @@ fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
                 timeout += 1;
                 if timeout > 10 {
                     error!("Timeout on COM exceeded");
-                    return Err(io::Error::new(e.kind().clone(), "Timeout limit exceeded"));
+                    return Err(io::Error::new(e.kind(), "Timeout limit exceeded"));
                 }
             }
             Err(err) => return Err(err),
