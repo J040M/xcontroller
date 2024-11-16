@@ -30,7 +30,7 @@ pub fn get_configuration(args: Vec<String>) -> Config {
         };
     }
 
-    return configuration;
+    configuration
 }
 
 #[cfg(test)]
