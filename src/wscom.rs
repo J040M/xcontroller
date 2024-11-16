@@ -1,6 +1,5 @@
 use futures::{stream::StreamExt, SinkExt};
 use log::{debug, error, info};
-use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::TcpStream;
@@ -16,14 +15,7 @@ use crate::serialcom::create_serialcom;
 use crate::Config;
 use crate::MessageType;
 use crate::MessageWS;
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MessageSender<'a> {
-    pub message_type: &'a str,
-    pub message: &'a str,
-    pub raw_message: String,
-    pub timestamp: u64,
-}
+use crate::structs::MessageSender;
 
 // Accept incoming connection from client
 pub async fn accept_connection(peer: SocketAddr, stream: TcpStream, configuration: Config) {

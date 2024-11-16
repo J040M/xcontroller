@@ -1,4 +1,5 @@
 use log::info;
+use std::env;
 use tokio::net::TcpListener;
 
 mod configuration;
@@ -17,7 +18,9 @@ async fn main() {
 
     info!("Starting xcontroller...");
 
-    let configuration = get_configuration();
+    // Set config from start params
+    let args: Vec<String> = env::args().collect();
+    let configuration = get_configuration(args);
 
     let addr = format!("0.0.0.0:{}", configuration.ws_port);
     info!("Listening on {}", addr);

@@ -77,3 +77,11 @@ pub struct Config {
     pub baud_rate: u32,
     pub ws_port: String,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MessageSender<'a> {
+    pub message_type: &'a str,
+    pub message: &'a str,
+    pub raw_message: String,
+    pub timestamp: u64,
+}
