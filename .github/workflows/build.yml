@@ -11,9 +11,9 @@ jobs:
 
         steps:
             - name: Install dependencies
-              run: sudo apt-get update && sudo apt-get install -y libudev-dev
+              run: sudo apt-get install -y libudev-dev
             - uses: actions/checkout@v2
             - name: Build step
-              run: cargo build --verbose
+              run: cargo build --verbose --release
             - name: Run tests
               run: cargo test --verbose
