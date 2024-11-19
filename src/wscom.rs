@@ -18,12 +18,15 @@ use crate::MessageWS;
 use crate::structs::MessageSender;
 
 // Accept incoming connection from client
-pub async fn accept_connection(peer: SocketAddr, stream: TcpStream, configuration: Config) {
+pub async fn accept_connection(peer: SocketAddr, stream: TcpStream, configuration: Config)-> Result<(), Error> {
     match handle_connection(peer, stream, configuration).await {
-        Ok(_) => {}
+        Ok(_) => Ok(()),
         Err(e) => match e {
-            Error::ConnectionClosed | Error::Protocol(_) | Error::Utf8 => (),
-            err => error!("Error processing connection: {}", err),
+            Error::ConnectionClosed | Error::Protocol(_) | Error::Utf8 => Ok(()),
+            err => {
+                error!("Error processing connection: {}", err);
+                Err(err)
+            },
         },
     }
 }

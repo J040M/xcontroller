@@ -1,6 +1,7 @@
 use log::info;
 use std::env;
 use tokio::net::TcpListener;
+use log::error;
 
 mod configuration;
 mod commands;
@@ -38,7 +39,9 @@ async fn main() {
         info!("Running with config: {:?}", cloned_configuration);
 
         tokio::spawn(async move {
-            accept_connection(peer, stream, cloned_configuration).await;
+            if let Err(e) = accept_connection(peer, stream, cloned_configuration).await {
+                error!("Connection error from {}: {}", peer, e);
+            }
         });
     }
 }
