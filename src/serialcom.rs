@@ -120,29 +120,27 @@ mod tests {
     }
 
     // TODO: For this to work a end of message delimiter is needed
+    #[test]
+    fn test_read_from_port_partial_ok() {
+        let data = b"data and more data";
+        let mut cursor = Cursor::new(data);
+        let result = read_from_port(&mut cursor).unwrap();
+        assert_eq!(result, "data and more data");
+    }
+
+    #[test]
+    fn test_read_from_port_timeout() {
+        struct TimeoutReader;
+        impl Read for TimeoutReader {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::Error::new(io::ErrorKind::TimedOut, "timeout"))
+            }
+        }
     
-    // #[test]
-    // fn test_read_from_port_partial_ok() {
-    //     let data = b"data and more data";
-    //     let mut cursor = Cursor::new(data);
-    //     let result = read_from_port(&mut cursor).unwrap();
-    //     assert_eq!(result, "data and more data");
-    // }
-
-    // #[test]
-    // fn test_read_from_port_timeout() {
-    //     struct TimeoutReader;
-    //     impl Read for TimeoutReader {
-    //         fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
-    //             Err(io::Error::new(io::ErrorKind::TimedOut, "timeout"))
-    //         }
-    //     }
-
-    //     let mut reader = TimeoutReader;
-    //     let result = read_from_port(&mut reader);
-    //     assert!(result.is_err());
-    //     assert_eq!(result.unwrap_err().kind(), io::ErrorKind::TimedOut);
-    // }
+        let mut reader = TimeoutReader;
+        let result = read_from_port(&mut reader).unwrap();
+        assert_eq!(result, "NO RESPONSE");
+    }
 
     #[test]
     fn test_write_to_port_success() {
