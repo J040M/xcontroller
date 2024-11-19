@@ -3,10 +3,10 @@ use log::{ info, debug, error };
 
 use main::{ AxePositions, PrinterInfo};
 
-pub fn parsing_m20(message: String) {}
+pub fn m20(message: String) {}
 // This will only work for MARLIN. Probably only a certain number versions as well.
 // Will get back to this a little later.
-pub fn parsing_m114(message: String) -> Result<AxePositions> {
+pub fn m114(message: String) -> Result<AxePositions> {
     let parts: Vec<&str> = message.split("\n").collect();
     let axes = AxePositions {
         X: 0,
@@ -40,7 +40,7 @@ pub fn parsing_m114(message: String) -> Result<AxePositions> {
     return axes
 }
 
-pub fn parsing_m115(message: String) -> Result<PrinterInfo> {
+pub fn m115(message: String) -> Result<PrinterInfo> {
     let printer_info = PrinterInfo {
         firmware_name: None,
         firmware_version: None,
@@ -146,7 +146,7 @@ pub fn parsing_m115(message: String) -> Result<PrinterInfo> {
     return printer_info
 }
 
-pub fn parsing_m105(message: String) -> Result<Temperatures> {
+pub fn m105(message: String) -> Result<Temperatures> {
     let re = Regex::new(r"T:([\d.]+)\s/([\d.]+)\sB:([\d.]+)\s/([\d.]+)").unwrap();
 
     // All these keys are not being used, YET!
