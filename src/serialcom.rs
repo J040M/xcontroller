@@ -28,7 +28,7 @@ pub fn create_serialcom(cmd: &str, serial_port: String, baud_rate: u32) -> Resul
                 Ok(response)
             } else {
                 //Send this message back to WS for broadcast
-                error!("Failed to read comport. Error");
+                error!("Failed to read COM port");
                 Err(())
             }
         }
@@ -99,7 +99,7 @@ fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
 fn write_to_port<T: Write>(port: &mut T, command: &[u8]) -> io::Result<()> {
     match port.write_all(command) {
         Ok(_) => {
-            debug!("Successfully sent command");
+            info!("{}", std::str::from_utf8(command).unwrap());
             Ok(())
         }
         Err(e) => Err(e),
