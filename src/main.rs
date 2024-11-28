@@ -1,9 +1,9 @@
 use log::{error, info};
+use simplelog::*;
 use std::env;
-use tokio::net::TcpListener;
 use std::fs::{self, File};
 use std::time::{SystemTime, UNIX_EPOCH};
-use simplelog::*;
+use tokio::net::TcpListener;
 
 mod commands;
 mod configuration;
@@ -28,6 +28,8 @@ async fn main() {
     let addr = format!("0.0.0.0:{}", configuration.ws_port);
     info!("Listening on {}", addr);
 
+    info!("Running with config: {:?}", configuration);
+
     let listener = TcpListener::bind(&addr)
         .await
         .expect("TCP fail to open connection");
@@ -38,7 +40,6 @@ async fn main() {
             .expect("Connected peers should have an address");
 
         let cloned_configuration = configuration.clone();
-        info!("Running with config: {:?}", cloned_configuration);
 
         tokio::spawn(async move {
             if let Err(e) = accept_connection(peer, stream, cloned_configuration).await {
@@ -49,7 +50,6 @@ async fn main() {
 }
 
 fn setup_logs() -> Result<(), std::io::Error> {
-
     //setup logs folder
     if !std::path::Path::new("./logs").exists() {
         match fs::create_dir("./logs") {
