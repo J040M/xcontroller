@@ -17,7 +17,6 @@ use crate::wscom::accept_connection;
 
 #[tokio::main]
 async fn main() {
-    // env_logger::init();
     setup_logs().unwrap();
 
     info!("Starting xcontroller...");
