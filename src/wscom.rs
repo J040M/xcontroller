@@ -12,13 +12,17 @@ use tungstenite::Message;
 use crate::commands::g_command;
 use crate::serialcom::create_serialcom;
 
+use crate::structs::MessageSender;
 use crate::Config;
 use crate::MessageType;
 use crate::MessageWS;
-use crate::structs::MessageSender;
 
 // Accept incoming connection from client
-pub async fn accept_connection(peer: SocketAddr, stream: TcpStream, configuration: Config)-> Result<(), Error> {
+pub async fn accept_connection(
+    peer: SocketAddr,
+    stream: TcpStream,
+    configuration: Config,
+) -> Result<(), Error> {
     match handle_connection(peer, stream, configuration).await {
         Ok(_) => Ok(()),
         Err(e) => match e {
@@ -26,7 +30,7 @@ pub async fn accept_connection(peer: SocketAddr, stream: TcpStream, configuratio
             err => {
                 error!("Error processing connection: {}", err);
                 Err(err)
-            },
+            }
         },
     }
 }
@@ -183,6 +187,6 @@ async fn handle_connection(
         }
     }
 
-    error!("ConnectionClosed for {}", peer);
+    info!("Connection lost for {}", peer);
     Err(Error::ConnectionClosed)
 }

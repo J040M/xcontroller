@@ -28,12 +28,12 @@ pub fn create_serialcom(cmd: &str, serial_port: String, baud_rate: u32) -> Resul
                 Ok(response)
             } else {
                 //Send this message back to WS for broadcast
-                error!("Failed to read comport. Error");
+                error!("Failed to read read_from_port");
                 Err(())
             }
         }
         Err(e) => {
-            error!("Failed to open \"{}\". Error: {}", serial_port, e);
+            error!("Failed to open COM \"{}\". Error: {}", serial_port, e);
             Err(())
         }
     }
@@ -78,10 +78,8 @@ fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
             }
             Err(e) if e.kind() == io::ErrorKind::TimedOut => {
                 // Handle same as Ok(0)
-                if last_char_time.elapsed() > timeout_duration {
-                    if !response_buffer.is_empty() {
-                        return Ok(response_buffer);
-                    }
+                if last_char_time.elapsed() > timeout_duration && !response_buffer.is_empty() {
+                    return Ok(response_buffer);
                 }
                 if start_time.elapsed() > timeout_duration * 3 {
                     return if response_buffer.is_empty() {
@@ -99,7 +97,7 @@ fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
 fn write_to_port<T: Write>(port: &mut T, command: &[u8]) -> io::Result<()> {
     match port.write_all(command) {
         Ok(_) => {
-            debug!("Successfully sent command");
+            info!("{}", std::str::from_utf8(command).unwrap());
             Ok(())
         }
         Err(e) => Err(e),
@@ -136,7 +134,7 @@ mod tests {
                 Err(io::Error::new(io::ErrorKind::TimedOut, "timeout"))
             }
         }
-    
+
         let mut reader = TimeoutReader;
         let result = read_from_port(&mut reader).unwrap();
         assert_eq!(result, "NO RESPONSE");
