@@ -21,10 +21,9 @@ Execute binary
 ``` ./xcontroller -- <websocket_port_value> <serial_port_string> <baudrate_value> <test_mode_boolean>```
 
 Note:
-Running the program without params it will fall into default values.
+Running the program without params it will fallback to default values.
 
-Default
-
+Default configurations:
 ``` Config { test_mode: false, serial_port: /dev/ttyUSB0, baud_rate: 115200, ws_port: 9002} ```
 
 ### Commands
@@ -40,3 +39,7 @@ Default
 - Information: Output information about the machine or its status.
 
 - Special: All commands that don't fit into the other categories and perform specific unique functions.
+
+### External docs
+
+- Marlin GCode docs: https://marlinfw.org/meta/gcode/
