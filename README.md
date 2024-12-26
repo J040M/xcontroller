@@ -1,6 +1,8 @@
-# Rust Serial Communication for 3D printers
+# Xcontroller
 
-3D controller written in Rust. Serialcom to send commands to the main board. Websocket server for further communication.
+<img src=".github/logo.png" alt="xcontroller logo" width="400"/>
+
+3D controller written in Rust. Serialcom to send commands to the main board. Websocket server for communication with the controller.
 
 ## Usage
 
