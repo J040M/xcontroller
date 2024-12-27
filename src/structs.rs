@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+// Used for identifying the type of incoming message
 #[derive(Debug, Serialize, Deserialize)]
 pub enum MessageType {
     GCommand,
@@ -7,12 +8,14 @@ pub enum MessageType {
     Unsafe,
 }
 
+// Used for receiving messages
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MessageWS<'a> {
     pub message_type: MessageType,
     pub message: &'a str,
 }
 
+// M115 - Firmware and Capabilities
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PrinterInfo<'a> {
     firmware_name: &'a str,
@@ -70,6 +73,7 @@ pub struct Temperatures {
     e3_set: u8,
 }
 
+// xcontroller configuration on startup
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub test_mode: bool,
@@ -78,6 +82,7 @@ pub struct Config {
     pub ws_port: String,
 }
 
+// Used for sending messages back to clients
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MessageSender<'a> {
     pub message_type: &'a str,

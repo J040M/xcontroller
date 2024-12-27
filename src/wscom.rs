@@ -49,8 +49,7 @@ async fn handle_connection(
     info!("New client | {}", peer);
     let (mut ws_write, mut ws_read) = ws_stream.split();
 
-    //Broadcast message to clients
-    // Broadcast message to clients
+    // Broadcast response message to clients
     async fn send_message_back(
         message: MessageSender<'_>,
         ws_write: &mut futures::prelude::stream::SplitSink<
@@ -59,11 +58,10 @@ async fn handle_connection(
         >,
     ) -> Result<()> {
         let json_str =
-            serde_json::to_string(&message).expect("Failed to serialize myvar into JSON");
+            serde_json::to_string(&message).expect("Failed to serialize messge into JSON");
         let resp_message = Message::Text(json_str);
 
         if let Err(e) = ws_write.send(resp_message).await {
-            // Handle the error here
             error!("{:?}", e)
         }
 
@@ -115,7 +113,7 @@ async fn handle_connection(
                                                 timestamp,
                                             };
 
-                                            //return response to WS clients
+                                            // Return response to WS clients
                                             send_message_back(message_sender, &mut ws_write)
                                                 .await?;
                                         }
