@@ -214,3 +214,81 @@ pub fn m119(message: String) -> EndstopStatus {
 
     endstop_status
 }
+
+
+/*****************/
+/*     Tests     */
+/*****************/
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_m20_parser() {
+        let sample_response = "Begin file list\nfile1.gcode\nfile2.gcode\nsubdir/file3.gcode\nEnd file list".to_string();
+        let files = m20(sample_response);
+        assert_eq!(files.len(), 3);
+        assert!(files.contains(&"file1.gcode".to_string()));
+        assert!(files.contains(&"file2.gcode".to_string()));
+        assert!(files.contains(&"subdir/file3.gcode".to_string()));
+    }
+
+    #[test]
+    fn test_m33_parser() {
+        let sample_response = "Path: /test/long/path/file.gcode\nok".to_string();
+        let file_path = m33(sample_response);
+        assert_eq!(file_path, "/test/long/path/file.gcode");
+    }
+
+    #[test]
+    fn test_m105_parser() {
+        let sample_response = "ok T:185.4 /200.0 B:55.2 /60.0 @:127 B@:0".to_string();
+        let temps = m105(sample_response);
+        assert_eq!(temps.e0, 185);
+        assert_eq!(temps.e0_set, 200);
+        assert_eq!(temps.bed, 55);
+        assert_eq!(temps.bed_set, 60);
+    }
+
+    #[test]
+    fn test_m114_parser() {
+        let sample_response = "X:10 Y:20 Z:30 E:0 Count X:10 Y:20 Z:30".to_string();
+        let axes = m114(sample_response).unwrap();
+        assert_eq!(axes.x, 10);
+        assert_eq!(axes.y, 20);
+        assert_eq!(axes.z, 30);
+
+        // Test error case
+        let error_response = "Count X:10 Y:20 Z:30".to_string();
+        assert!(m114(error_response).is_err());
+    }
+
+    #[test]
+    fn test_m115_parser() {
+        let sample_response = "FIRMWARE_NAME:Marlin 2.0.1\nCap:SERIAL_XON_XOFF:1\nCap:EEPROM:1\nCap:VOLUMETRIC:1\nCap:AUTOREPORT_TEMP:1\nCap:PROGRESS:1\nCap:PRINT_JOB:1\nCap:AUTOLEVEL:1\nCap:Z_PROBE:1\nCap:LEVELING_DATA:1\nCap:BUILD_PERCENT:1\nCap:SOFTWARE_POWER:1\nok".to_string();
+        
+        let info = m115(sample_response).unwrap();
+        assert_eq!(info.firmware_name, "Marlin");
+        assert_eq!(info.firmware_version, "2.0.1");
+        assert_eq!(info.serial_xon_xoff, 1);
+        assert_eq!(info.eeprom, 1);
+        assert_eq!(info.volumetric, 1);
+        assert_eq!(info.autoreport_temp, 1);
+        assert_eq!(info.progress, 1);
+        assert_eq!(info.print_job, 1);
+        assert_eq!(info.autolevel, 1);
+        assert_eq!(info.z_probe, 1);
+        assert_eq!(info.leveling_data, 1);
+        assert_eq!(info.build_percent, 1);
+        assert_eq!(info.software_power, 1);
+    }
+
+    #[test]
+    fn test_m119_parser() {
+        let sample_response = "Reporting endstop status\nx_min: TRIGGERED\ny_min: open\nz_min: open\nok".to_string();
+        let status = m119(sample_response);
+        assert_eq!(status.x_min, "TRIGGERED");
+        assert_eq!(status.y_min, "open");
+        assert_eq!(status.z_min, "open");
+    }
+}
