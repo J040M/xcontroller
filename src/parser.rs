@@ -9,14 +9,42 @@ use crate::structs::{AxePositions, EndstopStatus, PrinterInfo, Temperatures};
  * @param message: String, return message from firmware
  * @return Vec<String>, list of files on the SD card
  */
-pub fn m20(message: String) {}
+pub fn m20(message: String) -> Vec<String> {
+    let parts: Vec<&str> = message.split("\n").collect();
+    let mut files: Vec<String> = Vec::new();
+
+    for (_i, part) in parts.iter().enumerate() {
+        let file_parts: Vec<&str> = part.split_whitespace().collect();
+        for (_i, part) in file_parts.iter().enumerate() {
+            if part.contains(".gcode") {
+                files.push(part.to_string());
+            }
+        }
+    }
+
+    files
+}
 
 /**
- * Get long path of a file
+ * Get long path of a single file
  * @param message: String, return message from firmware
  * @return String, return long path of single file
  */
-pub fn m33(message: String) {}
+pub fn m33(message: String) -> String {
+    let parts: Vec<&str> = message.split("\n").collect();
+    let mut file_path = String::new();
+
+    for (_i, part) in parts.iter().enumerate() {
+        let file_parts: Vec<&str> = part.split_whitespace().collect();
+        for (_i, part) in file_parts.iter().enumerate() {
+            if part.contains(".gcode") {
+                file_path = part.to_string();
+            }
+        }
+    }
+
+    file_path
+}
 
 /**
  * Report temperatures

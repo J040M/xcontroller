@@ -16,7 +16,7 @@ use crate::structs::MessageSender;
 use crate::Config;
 use crate::MessageType;
 use crate::MessageWS;
-use crate::parser::{m105, m114, m115};
+use crate::parser::{m105, m114, m115, m119, m20, m33};
 
 /**
  * Accept incoming connection from client
@@ -130,6 +130,12 @@ async fn handle_connection(
 
                                             if &response != "ok" {
                                                 message_sender.message = match cmd.trim() {
+                                                    "M20" => {
+                                                        let response = m20(response);
+                                                        let converted = serde_json::to_string(&response).expect("Failed to serialize messge into JSON");
+                                                        converted
+                                                    },
+                                                    "M33" => m33(response),
                                                     "M105" => {
                                                         let response = m105(response);
                                                         let converted = serde_json::to_string(&response).expect("Failed to serialize messge into JSON");
@@ -146,8 +152,9 @@ async fn handle_connection(
                                                         converted
                                                     },
                                                     "M119" => {
-                                                        // Endstop states
-                                                        "Endstop status".to_string()
+                                                        let response = m119(response);
+                                                        let converted = serde_json::to_string(&response).expect("Failed to serialize messge into JSON");
+                                                        converted
                                                     }
                                                     _ => response.to_string()
                                                 };
