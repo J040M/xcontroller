@@ -7,7 +7,7 @@ static TIMEOUT: u64 = 1;
 // TODO: This  creates a serial connection for every command
 // The connection can be kept temporarily open to avoid this
 pub fn create_serialcom(cmd: &str, serial_port: String, baud_rate: u32) -> Result<String, ()> {
-    //Validate the Gcode in &command before converting it
+    // Validate the Gcode in &command before converting it
     let command = format!("{}\r\n", cmd);
     let c_inbytes = command.into_bytes();
 
@@ -17,17 +17,14 @@ pub fn create_serialcom(cmd: &str, serial_port: String, baud_rate: u32) -> Resul
     {
         Ok(mut port) => {
             if let Err(e) = write_to_port(&mut port, &c_inbytes) {
-                //Send this message back to WS for broadcast
                 error!("Failed to write_to_port | {}", e);
                 return Err(());
             }
 
             if let Ok(response) = read_from_port(&mut port) {
-                // Parse message and send this response back to WS for broadcast
                 info!("{}", response);
                 Ok(response)
             } else {
-                //Send this message back to WS for broadcast
                 error!("Failed to read read_from_port");
                 Err(())
             }
