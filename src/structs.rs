@@ -90,3 +90,10 @@ pub struct MessageSender<'a> {
     pub raw_message: String,
     pub timestamp: u64,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EndstopStatus {
+    pub x_min: String,
+    pub y_min: String,
+    pub z_min: String,
+}
