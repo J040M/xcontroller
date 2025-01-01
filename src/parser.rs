@@ -1,18 +1,69 @@
+use log::debug;
 use regex::Regex;
-use log::{ info, debug, error };
 
-use main::{ AxePositions, PrinterInfo};
+use crate::structs::{AxePositions, EndstopStatus, PrinterInfo, Temperatures};
 
+/**
+ *  List SD card
+ * Command param "L" to list long filenames, "T" to list with timestamps
+ * @param message: String, return message from firmware
+ * @return Vec<String>, list of files on the SD card
+ */
 pub fn m20(message: String) {}
-// This will only work for MARLIN. Probably only a certain number versions as well.
-// Will get back to this a little later.
-pub fn m114(message: String) -> Result<AxePositions> {
-    let parts: Vec<&str> = message.split("\n").collect();
-    let axes = AxePositions {
-        X: 0,
-        Y: 0,
-        Z: 0,
+
+/**
+ * Get long path of a file
+ * @param message: String, return message from firmware
+ * @return String, return long path of single file
+ */
+pub fn m33(message: String) {}
+
+/**
+ * Report temperatures
+ * @param message: String, return message from firmware
+ * @return Temperatures, temperatures of bed and extruders
+ */
+pub fn m105(message: String) -> Result<Temperatures, ()> {
+    let re = Regex::new(r"T:([\d.]+)\s/([\d.]+)\sB:([\d.]+)\s/([\d.]+)").unwrap();
+
+    // All these keys are not being used, YET!
+    // Also a printer with more extredures won't work with this
+    let temperatures = Temperatures {
+        bed: u8,
+        bed_set: u8,
+        e0: u8,
+        e0_set: u8,
+        e1: u8,
+        e1_set: u8,
+        e2: u8,
+        e2_set: u8,
+        e3: u8,
+        e3_set: u8,
     };
+
+    if let Some(captures) = re.captures(&message) {
+        let nozzle_temp = captures.get(1).unwrap().as_str();
+        let nozzle_def_temp = captures.get(2).unwrap().as_str();
+        let bed_temp = captures.get(3).unwrap().as_str();
+        let bed_def_temp = captures.get(4).unwrap().as_str();
+
+        temperatures.bed = bed.parse().unwrap_or(0);
+        temperatures.bed_set = bed_def_temp.parse().unwrap_or(0);
+        temperatures.e0 = nozzle_temp.parse().unwrap_or(0);
+        temperatures.e0_set = nozzle_def_temp.parse().unwrap_or(0);
+    }
+
+    return temperatures;
+}
+
+/**
+ * Report current axe position
+ * @param message: String, return message from firmware
+ * @return AxePositions, current position of the axes
+ */
+pub fn m114(message: String) -> Result<AxePositions, ()> {
+    let parts: Vec<&str> = message.split("\n").collect();
+    let axes = AxePositions { X: 0, Y: 0, Z: 0 };
 
     for (i, part) in parts.iter().enumerate() {
         let set_parts: Vec<&str> = part.split_whitespace().collect();
@@ -21,7 +72,7 @@ pub fn m114(message: String) -> Result<AxePositions> {
                 let axe_parts: Vec<&str> = part.split(":").collect();
                 let axis = axe_parts[0];
                 let value: i32 = axe_parts[1].parse().unwrap(); // Parse the value to an integer
-                
+
                 match axis {
                     "X" => axes.X = value,
                     "Y" => axes.Y = value,
@@ -37,10 +88,15 @@ pub fn m114(message: String) -> Result<AxePositions> {
         }
     }
 
-    return axes
+    return axes;
 }
 
-pub fn m115(message: String) -> Result<PrinterInfo> {
+/**
+ * Get printer info
+ * @param message: String, return message from firmware
+ * @return PrinterInfo, printer information
+ */
+pub fn m115<'a>(message: String) -> Result<PrinterInfo<'a>, ()> {
     let printer_info = PrinterInfo {
         firmware_name: None,
         firmware_version: None,
@@ -142,39 +198,36 @@ pub fn m115(message: String) -> Result<PrinterInfo> {
             }
         }
     }
-    
-    return printer_info
+
+    return Ok(printer_info);
 }
 
-pub fn m105(message: String) -> Result<Temperatures> {
-    let re = Regex::new(r"T:([\d.]+)\s/([\d.]+)\sB:([\d.]+)\s/([\d.]+)").unwrap();
-
-    // All these keys are not being used, YET!
-    // Also a printer with more extredures won't work with this
-    let temperatures = Temperatures {
-        bed: u8,
-        bed_set: u8,
-        e0: u8,
-        e0_set: u8,
-        e1: u8,
-        e1_set: u8,
-        e2: u8,
-        e2_set: u8,
-        e3: u8,
-        e3_set: u8,
+/**
+ * Get endstop status
+ * @param message: String, return message from firmware
+ * @return EndstopStatus, status of the endstops
+ */
+pub fn m119(message: String) -> Result<EndstopStatus, ()> {
+    let mut endstop_status = EndstopStatus {
+        x_min: "None".to_string(),
+        y_min: "None".to_string(),
+        z_min: "None".to_string(),
     };
 
-    if let Some(captures) = re.captures(message) {
-        let nozzle_temp = captures.get(1).unwrap().as_str();
-        let nozzle_def_temp = captures.get(2).unwrap().as_str();
-        let bed_temp = captures.get(3).unwrap().as_str();
-        let bed_def_temp = captures.get(4).unwrap().as_str();
+    let lines: Vec<&str> = message.split('\n').collect();
 
-        temperatures.bed = bed.parse().unwrap_or(0);
-        temperatures.bed_set = bed_def_temp.parse().unwrap_or(0);
-        temperatures.e0 = nozzle_temp.parse().unwrap_or(0);
-        temperatures.e0_set = nozzle_def_temp.parse().unwrap_or(0);
+    for line in lines {
+        if line.contains("x_min:") {
+            let status = line.split(':').nth(1).map(|s| s.trim().to_string());
+            endstop_status.x_min = status.unwrap_or("None".to_string());
+        } else if line.contains("y_min:") {
+            let status = line.split(':').nth(1).map(|s| s.trim().to_string());
+            endstop_status.y_min = status.unwrap_or("None".to_string());
+        } else if line.contains("z_min:") {
+            let status = line.split(':').nth(1).map(|s| s.trim().to_string());
+            endstop_status.z_min = status.unwrap_or("None".to_string());
+        }
     }
 
-    return temperatures
+    Ok(endstop_status)
 }

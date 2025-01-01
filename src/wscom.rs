@@ -16,6 +16,7 @@ use crate::structs::MessageSender;
 use crate::Config;
 use crate::MessageType;
 use crate::MessageWS;
+use crate::parser::{m105, m114, m115};
 
 // Accept incoming connection from client
 pub async fn accept_connection(
@@ -98,7 +99,7 @@ async fn handle_connection(
                                     ) {
                                         Ok(response) => {
                                             debug!("{:?}", response);
-
+                                            
                                             // Set timestamp
                                             let since_epoch = now
                                                 .duration_since(UNIX_EPOCH)
@@ -106,13 +107,26 @@ async fn handle_connection(
                                             let timestamp = since_epoch.as_secs();
 
                                             // Define response message
-                                            let message_sender = MessageSender {
+                                            let mut message_sender = MessageSender {
                                                 message_type: "MessageSender",
-                                                message: &response.clone(),
-                                                raw_message: response,
+                                                message: "",
+                                                raw_message: response.clone(),
                                                 timestamp,
                                             };
 
+                                            if &response != "ok" {
+                                                message_sender.message = match cmd.trim() {
+                                                    "M105" => m105(response),
+                                                    "M114" => m114(response),
+                                                    "M119" => {
+                                                        // Endstop states
+                                                        "Endstop status"
+                                                    }
+                                                    "M115" => m115(response),
+                                                    _ => &response
+                                                };
+                                            }
+                                            
                                             // Return response to WS clients
                                             send_message_back(message_sender, &mut ws_write)
                                                 .await?;

@@ -10,6 +10,7 @@ mod configuration;
 mod serialcom;
 mod structs;
 mod wscom;
+mod parser;
 
 use crate::configuration::get_configuration;
 use crate::structs::{Config, MessageType, MessageWS};
