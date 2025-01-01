@@ -97,8 +97,7 @@ pub fn m114(message: String) -> Result<AxePositions, ()> {
                         debug!("Unmanged axis value: {:?}", axe_parts);
                     }
                 }
-            // We are returning so we don't have to deal with the values after "Count"
-            } else if part.contains("Count") || part.contains("ok") {
+            } else {
                 return Err(());
             }
         }
