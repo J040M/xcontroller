@@ -7,10 +7,10 @@ use tokio::net::TcpListener;
 
 mod commands;
 mod configuration;
+mod parser;
 mod serialcom;
 mod structs;
 mod wscom;
-mod parser;
 
 use crate::configuration::get_configuration;
 use crate::structs::{Config, MessageType, MessageWS};
