@@ -119,7 +119,7 @@ pub fn m115(message: String) -> Result<PrinterInfo, ()> {
         if part.contains("FIRMWARE_NAME") {
             let fw_parts: Vec<&str> = part.split(":").collect();
             let fw_version: Vec<&str> = fw_parts[1].split_whitespace().collect();
-            debug!("FIRMWRE VERSION: {} {}", fw_version[0], fw_version[1]);
+            debug!("FIRMWARE VERSION: {} {}", fw_version[0], fw_version[1]);
 
             printer_info.firmware_name = fw_version[0].to_string();
             printer_info.firmware_version = fw_version[1].to_string();
