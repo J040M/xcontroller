@@ -23,23 +23,11 @@ pub fn m33(message: String) {}
  * @param message: String, return message from firmware
  * @return Temperatures, temperatures of bed and extruders
  */
-pub fn m105(message: String) -> Result<Temperatures, ()> {
+pub fn m105(message: String) -> Temperatures {
     let re = Regex::new(r"T:([\d.]+)\s/([\d.]+)\sB:([\d.]+)\s/([\d.]+)").unwrap();
 
-    // All these keys are not being used, YET!
-    // Also a printer with more extredures won't work with this
-    let temperatures = Temperatures {
-        bed: u8,
-        bed_set: u8,
-        e0: u8,
-        e0_set: u8,
-        e1: u8,
-        e1_set: u8,
-        e2: u8,
-        e2_set: u8,
-        e3: u8,
-        e3_set: u8,
-    };
+    // TODO: Printer with more extredures won't work with this
+    let mut temperatures = Temperatures::default();
 
     if let Some(captures) = re.captures(&message) {
         let nozzle_temp = captures.get(1).unwrap().as_str();
@@ -47,13 +35,13 @@ pub fn m105(message: String) -> Result<Temperatures, ()> {
         let bed_temp = captures.get(3).unwrap().as_str();
         let bed_def_temp = captures.get(4).unwrap().as_str();
 
-        temperatures.bed = bed.parse().unwrap_or(0);
+        temperatures.bed = bed_temp.parse().unwrap_or(0);
         temperatures.bed_set = bed_def_temp.parse().unwrap_or(0);
         temperatures.e0 = nozzle_temp.parse().unwrap_or(0);
         temperatures.e0_set = nozzle_def_temp.parse().unwrap_or(0);
     }
 
-    return temperatures;
+    temperatures
 }
 
 /**
@@ -63,32 +51,32 @@ pub fn m105(message: String) -> Result<Temperatures, ()> {
  */
 pub fn m114(message: String) -> Result<AxePositions, ()> {
     let parts: Vec<&str> = message.split("\n").collect();
-    let axes = AxePositions { X: 0, Y: 0, Z: 0 };
+    let mut axes = AxePositions { x: 0, y: 0, z: 0 };
 
-    for (i, part) in parts.iter().enumerate() {
+    for (_i, part) in parts.iter().enumerate() {
         let set_parts: Vec<&str> = part.split_whitespace().collect();
-        for (i, part) in set_parts.iter().enumerate() {
+        for (_i, part) in set_parts.iter().enumerate() {
             if part.contains("X") || part.contains("Y") || part.contains("Z") {
                 let axe_parts: Vec<&str> = part.split(":").collect();
                 let axis = axe_parts[0];
-                let value: i32 = axe_parts[1].parse().unwrap(); // Parse the value to an integer
+                let value: i8 = axe_parts[1].parse().unwrap(); // Parse the value to an integer
 
                 match axis {
-                    "X" => axes.X = value,
-                    "Y" => axes.Y = value,
-                    "Z" => axes.Z = value,
+                    "X" => axes.x = value,
+                    "Y" => axes.y = value,
+                    "Z" => axes.z = value,
                     _ => {
-                        debug!("Unmanged axis value: {}", axe_parts);
+                        debug!("Unmanged axis value: {:?}", axe_parts);
                     }
                 }
             // We are returning so we don't have to deal with the values after "Count"
             } else if part.contains("Count") || part.contains("ok") {
-                return;
+                return Err(());
             }
         }
     }
 
-    return axes;
+    Ok(axes)
 }
 
 /**
@@ -96,51 +84,18 @@ pub fn m114(message: String) -> Result<AxePositions, ()> {
  * @param message: String, return message from firmware
  * @return PrinterInfo, printer information
  */
-pub fn m115<'a>(message: String) -> Result<PrinterInfo<'a>, ()> {
-    let printer_info = PrinterInfo {
-        firmware_name: None,
-        firmware_version: None,
-        serial_xon_xoff: None,
-        eeprom: None,
-        volumetric: None,
-        autoreport_pos: None,
-        autoreport_temp: None,
-        progress: None,
-        print_job: None,
-        autolevel: None,
-        runout: None,
-        z_probe: None,
-        leveling_data: None,
-        build_percent: None,
-        software_power: None,
-        toggle_lights: None,
-        case_light_brightness: None,
-        emergency_parser: None,
-        most_action_commands: None,
-        prompt_support: None,
-        sdcard: None,
-        repeat: None,
-        sd_write: None,
-        auto_report_sd_status: None,
-        long_filename: None,
-        thermal_protection: None,
-        motion_modes: None,
-        arcs: None,
-        babystepping: None,
-        chamber_temperature: None,
-        cooler_temperature: None,
-        meatpack: None,
-    };
+pub fn m115(message: String) -> Result<PrinterInfo, ()> {
+    let mut printer_info = PrinterInfo::default();
 
     let parts: Vec<&str> = message.split("\n").collect();
-    for (i, part) in parts.iter().enumerate() {
+    for (_i, part) in parts.iter().enumerate() {
         if part.contains("FIRMWARE_NAME") {
             let fw_parts: Vec<&str> = part.split(":").collect();
             let fw_version: Vec<&str> = fw_parts[1].split_whitespace().collect();
             debug!("FIRMWRE VERSION: {} {}", fw_version[0], fw_version[1]);
 
-            printer_info.firmware_name = fw_version[0];
-            printer_info.firmware_version = fw_version[1];
+            printer_info.firmware_name = fw_version[0].to_string();
+            printer_info.firmware_version = fw_version[1].to_string();
         } else if part.contains("Cap:") {
             let cap_parts: Vec<&str> = part.split(":").collect();
             match cap_parts[0] {
@@ -199,7 +154,7 @@ pub fn m115<'a>(message: String) -> Result<PrinterInfo<'a>, ()> {
         }
     }
 
-    return Ok(printer_info);
+    Ok(printer_info)
 }
 
 /**
@@ -207,11 +162,11 @@ pub fn m115<'a>(message: String) -> Result<PrinterInfo<'a>, ()> {
  * @param message: String, return message from firmware
  * @return EndstopStatus, status of the endstops
  */
-pub fn m119(message: String) -> Result<EndstopStatus, ()> {
+pub fn m119(message: String) -> EndstopStatus {
     let mut endstop_status = EndstopStatus {
-        x_min: "None".to_string(),
-        y_min: "None".to_string(),
-        z_min: "None".to_string(),
+        x_min: "".to_string(),
+        y_min: "".to_string(),
+        z_min: "".to_string(),
     };
 
     let lines: Vec<&str> = message.split('\n').collect();
@@ -229,5 +184,5 @@ pub fn m119(message: String) -> Result<EndstopStatus, ()> {
         }
     }
 
-    Ok(endstop_status)
+    endstop_status
 }

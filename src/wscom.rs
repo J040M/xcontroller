@@ -18,7 +18,14 @@ use crate::MessageType;
 use crate::MessageWS;
 use crate::parser::{m105, m114, m115};
 
-// Accept incoming connection from client
+/**
+ * Accept incoming connection from client
+ * @param peer: SocketAddr, peer address
+ * @param stream: TcpStream, stream from client
+ * @param configuration: Config, configuration for the server
+ * @return Result<(), Error>, return Ok(())
+ * @throws Error
+ */
 pub async fn accept_connection(
     peer: SocketAddr,
     stream: TcpStream,
@@ -36,7 +43,14 @@ pub async fn accept_connection(
     }
 }
 
-// Get stream message and validate it and send back command
+/**
+ * Get stream message and validate it and send back command
+ * @param peer: SocketAddr, peer address
+ * @param stream: TcpStream, stream from client
+ * @param configuration: Config, configuration for the server
+ * @return Result<(), Error>, return Ok(())
+ * @throws Error 
+ */
 async fn handle_connection(
     peer: SocketAddr,
     stream: TcpStream,
@@ -52,7 +66,7 @@ async fn handle_connection(
 
     // Broadcast response message to clients
     async fn send_message_back(
-        message: MessageSender<'_>,
+        message: MessageSender,
         ws_write: &mut futures::prelude::stream::SplitSink<
             tokio_tungstenite::WebSocketStream<TcpStream>,
             Message,
@@ -108,22 +122,34 @@ async fn handle_connection(
 
                                             // Define response message
                                             let mut message_sender = MessageSender {
-                                                message_type: "MessageSender",
-                                                message: "",
+                                                message_type: "MessageSender".to_string(),
+                                                message: "".to_string(),
                                                 raw_message: response.clone(),
                                                 timestamp,
                                             };
 
                                             if &response != "ok" {
                                                 message_sender.message = match cmd.trim() {
-                                                    "M105" => m105(response),
-                                                    "M114" => m114(response),
+                                                    "M105" => {
+                                                        let response = m105(response);
+                                                        let converted = serde_json::to_string(&response).expect("Failed to serialize messge into JSON");
+                                                        converted
+                                                    }
+                                                    "M114" => {
+                                                        let response = m114(response);
+                                                        let converted = serde_json::to_string(&response).expect("Failed to serialize messge into JSON");
+                                                        converted
+                                                    },
+                                                    "M115" => {
+                                                        let response = m115(response);
+                                                        let converted = serde_json::to_string(&response).expect("Failed to serialize messge into JSON");
+                                                        converted
+                                                    },
                                                     "M119" => {
                                                         // Endstop states
-                                                        "Endstop status"
+                                                        "Endstop status".to_string()
                                                     }
-                                                    "M115" => m115(response),
-                                                    _ => &response
+                                                    _ => response.to_string()
                                                 };
                                             }
                                             
@@ -164,8 +190,8 @@ async fn handle_connection(
                                     let timestamp = since_epoch.as_secs();
 
                                     let message_sender = MessageSender {
-                                        message_type: "MessageSender",
-                                        message: &response.clone(),
+                                        message_type: "MessageSender".to_string(),
+                                        message: response.to_string().clone(),
                                         raw_message: response,
                                         timestamp,
                                     };
@@ -182,8 +208,8 @@ async fn handle_connection(
 
                                     // Define response message
                                     let message_sender = MessageSender {
-                                        message_type: "MessageSenderError",
-                                        message: "Error executing command",
+                                        message_type: "MessageSenderError".to_string(),
+                                        message: "Error executing command".to_string(),
                                         raw_message: "Error executing command".to_string(),
                                         timestamp,
                                     };
