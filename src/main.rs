@@ -7,6 +7,7 @@ use tokio::net::TcpListener;
 
 mod commands;
 mod configuration;
+mod parser;
 mod serialcom;
 mod structs;
 mod wscom;
@@ -17,7 +18,7 @@ use crate::wscom::accept_connection;
 
 #[tokio::main]
 async fn main() {
-    setup_logs().unwrap();
+    setup_logs().expect("Failed to setup logs");
 
     info!("Starting xcontroller...");
 
@@ -26,14 +27,15 @@ async fn main() {
     let configuration = get_configuration(args);
 
     let addr = format!("0.0.0.0:{}", configuration.ws_port);
-    info!("Listening on {}", addr);
 
+    info!("Listening on {}", addr);
     info!("Running with config: {:?}", configuration);
 
     let listener = TcpListener::bind(&addr)
         .await
         .expect("TCP fail to open connection");
 
+    // Start serial connection and listen for incoming connections
     while let Ok((stream, _)) = listener.accept().await {
         let peer = stream
             .peer_addr()
@@ -41,6 +43,7 @@ async fn main() {
 
         let cloned_configuration = configuration.clone();
 
+        // Spawn a new thread for each connection for async handling
         tokio::spawn(async move {
             if let Err(e) = accept_connection(peer, stream, cloned_configuration).await {
                 error!("Connection error from {}: {}", peer, e);
@@ -50,7 +53,7 @@ async fn main() {
 }
 
 fn setup_logs() -> Result<(), std::io::Error> {
-    //setup logs folder
+    // setup logs folder
     if !std::path::Path::new("./logs").exists() {
         match fs::create_dir("./logs") {
             Ok(()) => {
@@ -63,7 +66,7 @@ fn setup_logs() -> Result<(), std::io::Error> {
         }
     }
 
-    // Get timestamp
+    // Set timestamp
     let current_time = SystemTime::now();
     let duration_since_epoch = current_time.duration_since(UNIX_EPOCH).unwrap();
     let timestamp = duration_since_epoch.as_secs().to_string();

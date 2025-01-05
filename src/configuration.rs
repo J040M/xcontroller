@@ -1,4 +1,4 @@
-use crate::Config;
+use crate::structs::Config;
 use log::warn;
 
 pub fn get_configuration(args: Vec<String>) -> Config {

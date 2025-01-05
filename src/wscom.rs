@@ -12,12 +12,20 @@ use tungstenite::Message;
 use crate::commands::g_command;
 use crate::serialcom::create_serialcom;
 
+use crate::parser::{m105, m114, m115, m119, m20, m33};
 use crate::structs::MessageSender;
 use crate::Config;
 use crate::MessageType;
 use crate::MessageWS;
 
-// Accept incoming connection from client
+/**
+ * Accept incoming connection from client
+ * @param peer: SocketAddr, peer address
+ * @param stream: TcpStream, stream from client
+ * @param configuration: Config, configuration for the server
+ * @return Result<(), Error>, return Ok(())
+ * @throws Error
+ */
 pub async fn accept_connection(
     peer: SocketAddr,
     stream: TcpStream,
@@ -35,7 +43,14 @@ pub async fn accept_connection(
     }
 }
 
-// Get stream message and validate it and send back command
+/**
+ * Get stream message and validate it and send back command
+ * @param peer: SocketAddr, peer address
+ * @param stream: TcpStream, stream from client
+ * @param configuration: Config, configuration for the server
+ * @return Result<(), Error>, return Ok(())
+ * @throws Error
+ */
 async fn handle_connection(
     peer: SocketAddr,
     stream: TcpStream,
@@ -49,21 +64,19 @@ async fn handle_connection(
     info!("New client | {}", peer);
     let (mut ws_write, mut ws_read) = ws_stream.split();
 
-    //Broadcast message to clients
-    // Broadcast message to clients
+    // Broadcast response message to clients
     async fn send_message_back(
-        message: MessageSender<'_>,
+        message: MessageSender,
         ws_write: &mut futures::prelude::stream::SplitSink<
             tokio_tungstenite::WebSocketStream<TcpStream>,
             Message,
         >,
     ) -> Result<()> {
         let json_str =
-            serde_json::to_string(&message).expect("Failed to serialize myvar into JSON");
+            serde_json::to_string(&message).expect("Failed to serialize messge into JSON");
         let resp_message = Message::Text(json_str);
 
         if let Err(e) = ws_write.send(resp_message).await {
-            // Handle the error here
             error!("{:?}", e)
         }
 
@@ -108,14 +121,50 @@ async fn handle_connection(
                                             let timestamp = since_epoch.as_secs();
 
                                             // Define response message
-                                            let message_sender = MessageSender {
-                                                message_type: "MessageSender",
-                                                message: &response.clone(),
-                                                raw_message: response,
+                                            let mut message_sender = MessageSender {
+                                                message_type: "MessageSender".to_string(),
+                                                message: "".to_string(),
+                                                raw_message: response.clone(),
                                                 timestamp,
                                             };
 
-                                            //return response to WS clients
+                                            if &response != "ok" {
+                                                message_sender.message = match cmd.trim() {
+                                                    "M20" => {
+                                                        let response = m20(response);
+                                                        serde_json::to_string(&response).expect(
+                                                            "Failed to serialize messge into JSON",
+                                                        )
+                                                    }
+                                                    "M33" => m33(response),
+                                                    "M105" => {
+                                                        let response = m105(response);
+                                                        serde_json::to_string(&response).expect(
+                                                            "Failed to serialize messge into JSON",
+                                                        )
+                                                    }
+                                                    "M114" => {
+                                                        let response = m114(response);
+                                                        serde_json::to_string(&response).expect(
+                                                            "Failed to serialize messge into JSON",
+                                                        )
+                                                    }
+                                                    "M115" => {
+                                                        let response = m115(response);
+                                                        serde_json::to_string(&response).expect(
+                                                            "Failed to serialize messge into JSON",
+                                                        )
+                                                    }
+                                                    "M119" => {
+                                                        let response = m119(response);
+                                                        serde_json::to_string(&response).expect(
+                                                            "Failed to serialize messge into JSON",
+                                                        )
+                                                    }
+                                                    _ => response.to_string(),
+                                                };
+                                            }
+                                            // Return response to WS clients
                                             send_message_back(message_sender, &mut ws_write)
                                                 .await?;
                                         }
@@ -152,8 +201,8 @@ async fn handle_connection(
                                     let timestamp = since_epoch.as_secs();
 
                                     let message_sender = MessageSender {
-                                        message_type: "MessageSender",
-                                        message: &response.clone(),
+                                        message_type: "MessageSender".to_string(),
+                                        message: response.to_string().clone(),
                                         raw_message: response,
                                         timestamp,
                                     };
@@ -170,8 +219,8 @@ async fn handle_connection(
 
                                     // Define response message
                                     let message_sender = MessageSender {
-                                        message_type: "MessageSenderError",
-                                        message: "Error executing command",
+                                        message_type: "MessageSenderError".to_string(),
+                                        message: "Error executing command".to_string(),
                                         raw_message: "Error executing command".to_string(),
                                         timestamp,
                                     };
