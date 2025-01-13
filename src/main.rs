@@ -1,9 +1,11 @@
 use log::{error, info};
 use simplelog::*;
-use std::env;
+use std::{env, path::Path};
 use std::fs::{self, File};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::io::{Error};
 use tokio::net::TcpListener;
+use tokio::spawn;
 
 mod commands;
 mod configuration;
@@ -44,7 +46,7 @@ async fn main() {
         let cloned_configuration = configuration.clone();
 
         // Spawn a new thread for each connection for async handling
-        tokio::spawn(async move {
+        spawn(async move {
             if let Err(e) = accept_connection(peer, stream, cloned_configuration).await {
                 error!("Connection error from {}: {}", peer, e);
             }
@@ -52,9 +54,9 @@ async fn main() {
     }
 }
 
-fn setup_logs() -> Result<(), std::io::Error> {
+fn setup_logs() -> Result<(), Error> {
     // setup logs folder
-    if !std::path::Path::new("./logs").exists() {
+    if !Path::new("./logs").exists() {
         match fs::create_dir("./logs") {
             Ok(()) => {
                 println!("Setup logs folder");

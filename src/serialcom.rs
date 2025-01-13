@@ -1,6 +1,7 @@
 use log::{debug, error, info};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Write, ErrorKind};
 use std::time::{Duration, Instant};
+use std::str;
 
 static TIMEOUT: u64 = 1;
 
@@ -46,7 +47,7 @@ fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
     loop {
         match port.read(serial_buffer.as_mut_slice()) {
             Ok(bytes_read) if bytes_read > 0 => {
-                match std::str::from_utf8(&serial_buffer[0..bytes_read]) {
+                match str::from_utf8(&serial_buffer[0..bytes_read]) {
                     Ok(res) => {
                         response_buffer.push_str(res);
                         last_char_time = Instant::now();
@@ -73,7 +74,7 @@ fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
                     };
                 }
             }
-            Err(e) if e.kind() == io::ErrorKind::TimedOut => {
+            Err(e) if e.kind() == ErrorKind::TimedOut => {
                 // Handle same as Ok(0)
                 if last_char_time.elapsed() > timeout_duration && !response_buffer.is_empty() {
                     return Ok(response_buffer);
@@ -94,7 +95,7 @@ fn read_from_port<T: Read>(port: &mut T) -> io::Result<String> {
 fn write_to_port<T: Write>(port: &mut T, command: &[u8]) -> io::Result<()> {
     match port.write_all(command) {
         Ok(_) => {
-            info!("{}", std::str::from_utf8(command).unwrap());
+            info!("{}", str::from_utf8(command).unwrap());
             Ok(())
         }
         Err(e) => Err(e),
@@ -104,7 +105,7 @@ fn write_to_port<T: Write>(port: &mut T, command: &[u8]) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
+    use std::io::{Cursor, Error, ErrorKind, Result};
 
     #[test]
     fn test_read_from_port_ok() {
@@ -128,7 +129,7 @@ mod tests {
         struct TimeoutReader;
         impl Read for TimeoutReader {
             fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
-                Err(io::Error::new(io::ErrorKind::TimedOut, "timeout"))
+                Err(Error::new(ErrorKind::TimedOut, "timeout"))
             }
         }
 
@@ -149,11 +150,11 @@ mod tests {
     fn test_write_to_port_error() {
         struct ErrorWriter;
         impl Write for ErrorWriter {
-            fn write(&mut self, _: &[u8]) -> io::Result<usize> {
-                Err(io::Error::new(io::ErrorKind::Other, "write error"))
+            fn write(&mut self, _: &[u8]) -> Result<usize> {
+                Err(Error::new(ErrorKind::Other, "write error"))
             }
 
-            fn flush(&mut self) -> io::Result<()> {
+            fn flush(&mut self) -> Result<()> {
                 Ok(())
             }
         }
@@ -162,6 +163,6 @@ mod tests {
         let command = b"test command";
         let result = write_to_port(&mut writer, command);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Other);
+        assert_eq!(result.unwrap_err().kind(), ErrorKind::Other);
     }
 }

@@ -6,6 +6,7 @@ use tokio::net::TcpStream;
 use tokio_tungstenite::{
     accept_async,
     tungstenite::{Error, Result},
+    WebSocketStream
 };
 use tungstenite::Message;
 
@@ -68,7 +69,7 @@ async fn handle_connection(
     async fn send_message_back(
         message: MessageSender,
         ws_write: &mut futures::prelude::stream::SplitSink<
-            tokio_tungstenite::WebSocketStream<TcpStream>,
+            WebSocketStream<TcpStream>,
             Message,
         >,
     ) -> Result<()> {
