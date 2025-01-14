@@ -74,27 +74,14 @@ pub fn m105(message: String) -> Temperatures {
  * @return AxePositions, current position of the axes
  */
 pub fn m114(message: String) -> AxePositions {
-    let parts: Vec<&str> = message.split("\n").collect();
-    let mut axes = AxePositions { x: 0, y: 0, z: 0 };
+    let mut axes = AxePositions { x: 0.0, y: 0.0, z: 0.0 };
 
-    for upart in parts {
-        let set_parts: Vec<&str> = upart.split_whitespace().collect();
-        for part in set_parts {
-            if part.contains("X") || part.contains("Y") || part.contains("Z") {
-                let axe_parts: Vec<&str> = part.split(":").collect();
-                let axis = axe_parts[0];
-                let value: i8 = axe_parts[1].parse().unwrap(); // Parse the value to an integer
+    let re = Regex::new(r"X:([\d\.]+)\s+Y:([\d\.]+)\s+Z:([\d\.]+)\s+E:[\d\.]+").unwrap();
 
-                match axis {
-                    "X" => axes.x = value,
-                    "Y" => axes.y = value,
-                    "Z" => axes.z = value,
-                    _ => {
-                        debug!("Unmanged axis value: {:?}", axe_parts);
-                    }
-                }
-            }
-        }
+    if let Some(captures) = re.captures(&message) {
+        axes.x = captures.get(1).unwrap().as_str().parse::<f32>().unwrap_or(0.0);
+        axes.y = captures.get(2).unwrap().as_str().parse::<f32>().unwrap_or(0.0);
+        axes.z = captures.get(3).unwrap().as_str().parse::<f32>().unwrap_or(0.0);
     }
 
     axes
@@ -248,11 +235,11 @@ mod tests {
 
     #[test]
     fn test_m114_parser() {
-        let sample_response = "X:10 Y:20 Z:30 E:0 Count X:10 Y:20 Z:30".to_string();
+        let sample_response = "X:10.0 Y:20.0 Z:30.0 E:0.0 Count X:1000 Y:2110 Z:31110".to_string();
         let axes = m114(sample_response);
-        assert_eq!(axes.x, 10);
-        assert_eq!(axes.y, 20);
-        assert_eq!(axes.z, 30);
+        assert_eq!(axes.x, 10.0);
+        assert_eq!(axes.y, 20.0);
+        assert_eq!(axes.z, 30.0);
     }
 
     #[test]
