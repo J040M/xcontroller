@@ -165,6 +165,7 @@ async fn handle_connection(
                                                     _ => response.to_string(),
                                                 };
                                             }
+                                            message_sender.message_type = cmd.to_string();
                                             // Return response to WS clients
                                             send_message_back(message_sender, &mut ws_write)
                                                 .await?;
