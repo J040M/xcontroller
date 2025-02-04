@@ -2,7 +2,7 @@
 
 # Variables
 GITHUB_RELEASE_URL="https://github.com/J040M/xcontroller/releases/latest/download/xcontroller"        # GitHub release URL (you'll pass this as an argument)
-BIN_PATH="/usr/local/"  # Path where the binary is installed
+BIN_PATH="/usr/local"  # Path where the binary is installed
 SERVICE_NAME="xcontroller" # The name of the systemd service (e.g. "my_service")
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"  # Path to the systemd service file
 TEMP_DIR="/tmp/xcontroller"  # Temporary directory for downloading the binary
@@ -44,7 +44,7 @@ fi
 # 3. Install/Update the binary
 echo "Installing/updating the binary..."
 sudo mv "$TEMP_DIR/$SERVICE_NAME" $BIN_PATH
-sudo chmod +x $BIN_PATH
+sudo chmod +x "$BIN_PATH/$SERVICE_NAME"
 if [ $? -ne 0 ]; then
   echo "Error: Failed to install/update the binary"
   exit 1
