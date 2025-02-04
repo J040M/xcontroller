@@ -10,11 +10,10 @@ permissions:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [ubuntu-latest]  # Use ubuntu-latest for all builds
-        arch: [x86_64, i686, armv7]
+        arch: [x86_64, i686]
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -44,6 +43,34 @@ jobs:
           path: target/${{ matrix.arch }}-unknown-linux-gnu/release/xcontroller
           retention-days: 1
 
+  build-arm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Update
+        run: sudo apt-get update
+
+      - name: Install dependencies
+        run: sudo apt-get install -y libudev-dev
+
+      - name: Add Rust target for armv7
+        run: rustup target add armv7-unknown-linux-gnueabihf
+
+      - name: Build
+        run: cargo build --verbose --release --target armv7-unknown-linux-gnueabihf
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-armv7
+          path: target/armv7-unknown-linux-gnueabihf/release/xcontroller
+          retention-days: 1
   test:
     needs: build
     runs-on: ubuntu-latest
