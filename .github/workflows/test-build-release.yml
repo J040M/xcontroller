@@ -1,0 +1,153 @@
+name: test-build-release
+
+on:
+  push:
+    branches: [ master ]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Update
+        run: sudo apt-get update
+
+      - name: Install dependencies
+        run: sudo apt-get install -y libudev-dev
+
+      - name: Run format
+        run: cargo fmt --verbose
+  
+      - name: Run clippy 
+        run: cargo clippy --verbose
+
+      - name: Run tests
+        run: cargo test --verbose
+
+  build-x86_64:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Update
+        run: sudo apt-get update
+
+      - name: Install dependencies
+        run: sudo apt-get install -y libudev-dev
+
+      - name: Add Rust target for each architecture
+        run: |
+          rustup target add x86_64-unknown-linux-gnu || true
+          
+      - name: Build
+        run: cargo build --verbose --release --target x86_64-unknown-linux-gnu
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-x86_64
+          path: target/x86_64-unknown-linux-gnu/release/xcontroller
+          retention-days: 1
+
+  build-aarch64:
+    runs-on: ubuntu-22.04-arm
+    needs: test
+    
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Update
+        run: sudo apt-get update
+
+      - name: Install dependencies
+        run: sudo apt-get install -y libudev-dev
+
+      - name: Add ARM target for arm64 raspbian
+        run: rustup target add aarch64-unknown-linux-gnu || true
+
+      - name: Build
+        run: cargo build --verbose --release --target aarch64-unknown-linux-gnu 
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-aarch64
+          path: target/aarch64-unknown-linux-gnu/release/xcontroller
+          retention-days: 1
+
+  release:
+    needs: [build-x86_64, build-aarch64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version from Cargo.toml
+        id: get_version
+        run: |
+          echo "version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')" >> $GITHUB_OUTPUT
+
+      # Download build artifacts for each architecture
+      - name: Download build artifacts for x86_64
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-x86_64
+          path: target/x86_64-unknown-linux-gnu/release
+
+      - name: Download build artifacts for aarch64
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-aarch64
+          path: target/aarch64-unknown-linux-gnu/release
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          release_name: Release v${{ steps.get_version.outputs.version }}
+          draft: false
+          prerelease: false
+
+      - name: Upload x86_64 Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: target/x86_64-unknown-linux-gnu/release/xcontroller
+          asset_name: xcontroller-x86_64
+          asset_content_type: application/octet-stream
+
+      - name: Upload aarch64 Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: target/aarch64-unknown-linux-gnu/release/xcontroller
+          asset_name: xcontroller-aarch64
+          asset_content_type: application/octet-stream
