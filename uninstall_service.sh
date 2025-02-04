@@ -33,13 +33,13 @@ echo "Reloading systemd..."
 sudo systemctl daemon-reload
 
 # 5. (Optional) Remove the binary
-echo "Do you want to remove the binary ($BIN_PATH)? (y/n)"
+echo "Do you want to remove the binary ($BIN_PATH/$SERVICE_NAME)? (y/n)"
 read -r REMOVE_BINARY
 if [ "$REMOVE_BINARY" == "y" ]; then
   echo "Removing the binary..."
-  sudo rm -f $BIN_PATH
+  sudo rm -f $BIN_PATH/$SERVICE_NAME
   if [ $? -ne 0 ]; then
-    echo "Error: Failed to remove binary $BIN_PATH"
+    echo "Error: Failed to remove binary "
     exit 1
   fi
 fi

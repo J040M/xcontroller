@@ -65,9 +65,9 @@ After=network.target
 [Service]
 ExecStart=$BIN_PATH/$SERVICE_NAME -- $WEBSOCKET_PORT $SERIAL_PORT $BAUDRATE $TEST_MODE
 Restart=always
-User=root  # Adjust this to the user you want the service to run as
-Group=root  # Optional, set if needed
-StandardOutput=journal  # Logs output to journal (default)
+User=root
+Group=root
+StandardOutput=journal
 
 [Install]
 WantedBy=multi-user.target
