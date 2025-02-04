@@ -10,7 +10,11 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, raspbian-latest]
+        arch: [x86, x64, arm]
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -18,20 +22,21 @@ jobs:
         with:
           toolchain: stable
           override: true
-          
+      
+      - name: Update
+        run: sudo apt-get update
+
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libudev-dev
+        run: sudo apt-get install -y libudev-dev
       
       - name: Build
-        run: cargo build --verbose --release
+        run: cargo build --verbose --release --target ${{ matrix.arch }}-unknown-linux-gnu
       
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts
-          path: target/release/xcontroller
+          name: build-artifacts-${{ matrix.os }}-${{ matrix.arch }}
+          path: target/${{ matrix.arch }}-unknown-linux-gnu/release/xcontroller
           retention-days: 1
 
   test:
@@ -46,10 +51,11 @@ jobs:
           toolchain: stable
           override: true
       
+      - name: Update
+        run: sudo apt-get update
+
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libudev-dev
+        run: sudo apt-get install -y libudev-dev
       
       - name: Run tests
         run: cargo test --verbose
@@ -63,8 +69,8 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: build-artifacts
-          path: target/release
+          name: build-artifacts-ubuntu-latest-x64
+          path: target/x64-unknown-linux-gnu/release
       
       - name: Create Release
         id: create_release
@@ -83,6 +89,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: target/release/xcontroller
+          asset_path: target/x64-unknown-linux-gnu/release/xcontroller
           asset_name: xcontroller
           asset_content_type: application/octet-stream
