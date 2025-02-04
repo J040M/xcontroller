@@ -20,12 +20,16 @@ if [ -z "$WEBSOCKET_PORT" ] || [ -z "$SERIAL_PORT" ] || [ -z "$BAUDRATE" ] || [ 
   exit 1
 fi
 
-# 1. Stop the service
-echo "Stopping the service..."
-sudo systemctl stop $SERVICE_NAME
-if [ $? -ne 0 ]; then
-  echo "Error: Failed to stop service $SERVICE_NAME"
-  exit 1
+# 1. Check if the service is already running and stop it
+if systemctl is-active --quiet $SERVICE_NAME; then
+  echo "Stopping the service..."
+  sudo systemctl stop $SERVICE_NAME
+  if [ $? -ne 0 ]; then
+    echo "Error: Failed to stop service $SERVICE_NAME"
+    exit 1
+  fi
+else
+  echo "Service $SERVICE_NAME is not running, skipping stop."
 fi
 
 # 2. Download the binary from GitHub release URL
@@ -55,15 +59,14 @@ if [ ! -f $SERVICE_FILE ]; then
   # Create the systemd service file
   cat > $SERVICE_FILE <<EOL
 [Unit]
-Description=Your Service
+Description=xcontroller
 After=network.target
 
 [Service]
 ExecStart=$BIN_PATH -- $WEBSOCKET_PORT $SERIAL_PORT $BAUDRATE $TEST_MODE
 Restart=always
-User=your-username  # Adjust this to the user you want the service to run as
-Group=your-groupname  # Optional, set if needed
-WorkingDirectory=/path/to/working/dir  # Optional, if your app needs a working directory
+User=root  # Adjust this to the user you want the service to run as
+Group=root  # Optional, set if needed
 StandardOutput=journal  # Logs output to journal (default)
 
 [Install]

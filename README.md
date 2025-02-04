@@ -31,10 +31,10 @@ Default configurations:
 4. Install or update as a service
 This will allow the service to restart with the correct params on reboot
 
-```./install_or_update_service.sh 8080 "/dev/ttyUSB0" 115200 true```
+```./install_service.sh 8080 "/dev/ttyUSB0" 115200 true```
 
 Note on how to make the script executable:
-```chmod +x install_or_update_service.sh```
+```chmod +x install_service.sh```
 
 
 Start/Restart or stop the service:
