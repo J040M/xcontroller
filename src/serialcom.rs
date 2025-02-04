@@ -1,36 +1,47 @@
 use log::{debug, error, info};
+use serialport::SerialPort;
 use std::io::{self, Read, Write};
 use std::time::{Duration, Instant};
+use tokio_tungstenite::{
+    tungstenite::{Error, Result},
+};
 
 static TIMEOUT: u64 = 1;
 
-// TODO: This  creates a serial connection for every command
-// The connection can be kept temporarily open to avoid this
-pub fn create_serialcom(cmd: &str, serial_port: String, baud_rate: u32) -> Result<String, ()> {
-    // Validate the Gcode in &command before converting it
-    let command = format!("{}\r\n", cmd);
-    let c_inbytes = command.into_bytes();
+pub struct SerialConnection {
+    port: Box<dyn SerialPort>,
+}
 
-    match serialport::new(&serial_port, baud_rate)
-        .timeout(Duration::from_secs(TIMEOUT))
-        .open()
-    {
-        Ok(mut port) => {
-            if let Err(e) = write_to_port(&mut port, &c_inbytes) {
-                error!("Failed to write_to_port | {}", e);
-                return Err(());
-            }
-
-            if let Ok(response) = read_from_port(&mut port) {
-                info!("{}", response);
-                Ok(response)
-            } else {
-                error!("Failed to read read_from_port");
-                Err(())
+impl SerialConnection {
+    pub fn new(serial_port: &str, baud_rate: u32) -> Result<Self, Error> {
+        match serialport::new(serial_port, baud_rate)
+            .timeout(Duration::from_secs(TIMEOUT))
+            .open()
+        {
+            Ok(port) => Ok(SerialConnection {
+                port: port, // Remove Box::new() since open() already returns a Box<dyn SerialPort>
+            }),
+            Err(e) => {
+                error!("Failed to open COM \"{}\". Error: {}", serial_port, e);
+                Err(Error::Io(io::Error::new(io::ErrorKind::Other, "Failed to open COM port")))
             }
         }
-        Err(e) => {
-            error!("Failed to open COM \"{}\". Error: {}", serial_port, e);
+    }
+
+    pub fn send_command(&mut self, cmd: &str) -> Result<String, ()> {
+        let command = format!("{}\r\n", cmd);
+        let c_inbytes = command.into_bytes();
+
+        if let Err(e) = write_to_port(&mut self.port, &c_inbytes) {
+            error!("Failed to write_to_port | {}", e);
+            return Err(());
+        }
+
+        if let Ok(response) = read_from_port(&mut self.port) {
+            info!("{}", response);
+            Ok(response)
+        } else {
+            error!("Failed to read from port");
             Err(())
         }
     }

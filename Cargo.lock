@@ -1203,6 +1203,7 @@ name = "xcontroller"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "futures-util",
  "log",
  "regex",
  "serde",
