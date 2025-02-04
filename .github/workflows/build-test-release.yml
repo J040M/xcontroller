@@ -13,8 +13,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, raspbian-latest]
-        arch: [x86, x64, arm]
+        os: [ubuntu-latest]  # Use ubuntu-latest for all builds
+        arch: [x86_64, i686, armv7]
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -22,20 +22,25 @@ jobs:
         with:
           toolchain: stable
           override: true
-      
+
       - name: Update
         run: sudo apt-get update
 
       - name: Install dependencies
         run: sudo apt-get install -y libudev-dev
-      
+
+      - name: Add Rust target for each architecture
+        run: |
+          rustup target add ${{ matrix.arch }}-unknown-linux-gnu || true
+          rustup target add armv7-unknown-linux-gnueabihf || true  # explicitly for armv7
+
       - name: Build
         run: cargo build --verbose --release --target ${{ matrix.arch }}-unknown-linux-gnu
-      
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts-${{ matrix.os }}-${{ matrix.arch }}
+          name: build-artifacts-${{ matrix.arch }}
           path: target/${{ matrix.arch }}-unknown-linux-gnu/release/xcontroller
           retention-days: 1
 
@@ -50,13 +55,13 @@ jobs:
         with:
           toolchain: stable
           override: true
-      
+
       - name: Update
         run: sudo apt-get update
 
       - name: Install dependencies
         run: sudo apt-get install -y libudev-dev
-      
+
       - name: Run tests
         run: cargo test --verbose
 
@@ -66,12 +71,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download build artifacts
+      # Download build artifacts for each architecture
+      - name: Download build artifacts for x86_64
         uses: actions/download-artifact@v4
         with:
-          name: build-artifacts-ubuntu-latest-x64
-          path: target/x64-unknown-linux-gnu/release
-      
+          name: build-artifacts-x86_64
+          path: target/x86_64-unknown-linux-gnu/release
+
+      - name: Download build artifacts for i686
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-i686
+          path: target/i686-unknown-linux-gnu/release
+
+      - name: Download build artifacts for armv7
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-armv7
+          path: target/armv7-unknown-linux-gnueabihf/release
+
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
@@ -83,12 +101,32 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Upload Release Asset
+      - name: Upload x86_64 Release Asset
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: target/x64-unknown-linux-gnu/release/xcontroller
-          asset_name: xcontroller
+          asset_path: target/x86_64-unknown-linux-gnu/release/xcontroller
+          asset_name: xcontroller-x86_64
+          asset_content_type: application/octet-stream
+
+      - name: Upload i686 Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: target/i686-unknown-linux-gnu/release/xcontroller
+          asset_name: xcontroller-i686
+          asset_content_type: application/octet-stream
+
+      - name: Upload armv7 Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: target/armv7-unknown-linux-gnueabihf/release/xcontroller
+          asset_name: xcontroller-armv7
           asset_content_type: application/octet-stream
