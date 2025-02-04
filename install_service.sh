@@ -5,7 +5,7 @@ GITHUB_RELEASE_URL="https://github.com/J040M/xcontroller/releases/latest/downloa
 BIN_PATH="/usr/local/"  # Path where the binary is installed
 SERVICE_NAME="xcontroller" # The name of the systemd service (e.g. "my_service")
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"  # Path to the systemd service file
-TEMP_DIR="/tmp/your_binary_temp"  # Temporary directory for downloading the binary
+TEMP_DIR="/tmp/xcontroller"  # Temporary directory for downloading the binary
 
 # Parameters for the binary
 WEBSOCKET_PORT=$1
@@ -35,7 +35,7 @@ fi
 # 2. Download the binary from GitHub release URL
 echo "Downloading the binary from $GITHUB_RELEASE_URL..."
 mkdir -p $TEMP_DIR
-curl -L -o "$TEMP_DIR/your-binary" $GITHUB_RELEASE_URL
+curl -L -o "$TEMP_DIR/$SERVICE_NAME" $GITHUB_RELEASE_URL
 if [ $? -ne 0 ]; then
   echo "Error: Failed to download the binary"
   exit 1
@@ -43,7 +43,7 @@ fi
 
 # 3. Install/Update the binary
 echo "Installing/updating the binary..."
-sudo mv "$TEMP_DIR/your-binary" $BIN_PATH
+sudo mv "$TEMP_DIR/$SERVICE_NAME" $BIN_PATH
 sudo chmod +x $BIN_PATH
 if [ $? -ne 0 ]; then
   echo "Error: Failed to install/update the binary"
@@ -63,7 +63,7 @@ Description=xcontroller
 After=network.target
 
 [Service]
-ExecStart=$BIN_PATH -- $WEBSOCKET_PORT $SERIAL_PORT $BAUDRATE $TEST_MODE
+ExecStart=$BIN_PATH/$SERVICE_NAME -- $WEBSOCKET_PORT $SERIAL_PORT $BAUDRATE $TEST_MODE
 Restart=always
 User=root  # Adjust this to the user you want the service to run as
 Group=root  # Optional, set if needed
