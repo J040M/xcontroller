@@ -2,9 +2,7 @@ use log::{debug, error, info};
 use serialport::SerialPort;
 use std::io::{self, Read, Write};
 use std::time::{Duration, Instant};
-use tokio_tungstenite::{
-    tungstenite::{Error, Result},
-};
+use tokio_tungstenite::tungstenite::{Error, Result};
 
 static TIMEOUT: u64 = 1;
 
