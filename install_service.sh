@@ -13,6 +13,14 @@ SERIAL_PORT=$2
 BAUDRATE=$3
 TEST_MODE=$4
 
+# Determine architecture and update GITHUB_RELEASE_URL
+ARCH=$(uname -m)
+if [ "$ARCH" = "aarch64" ]; then
+  GITHUB_RELEASE_URL="${GITHUB_RELEASE_URL}-aarch64"
+else
+  GITHUB_RELEASE_URL="${GITHUB_RELEASE_URL}-x86_64"
+fi
+
 # Check if required parameters are provided
 if [ -z "$WEBSOCKET_PORT" ] || [ -z "$SERIAL_PORT" ] || [ -z "$BAUDRATE" ] || [ -z "$TEST_MODE" ]; then
   echo "Error: Missing required parameters."
@@ -79,6 +87,14 @@ else
   echo "Service file already exists, updating..."
   sudo systemctl daemon-reload
   echo "Service updated!"
+fi
+
+# Make the binary executable
+echo "Making binary executable..."
+sudo chmod +x "$BIN_PATH/$SERVICE_NAME"
+if [ $? -ne 0 ]; then
+  echo "Error: Failed to make binary executable"
+  exit 1
 fi
 
 # 5. Start the service
