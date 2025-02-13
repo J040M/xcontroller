@@ -184,6 +184,36 @@ async fn handle_connection(
                             // cmd = "M115";
                             //Expects message.message to be ex: /dev/USBtty01;119200
                         }
+                        MessageType::FileUpload => {
+                            let file_content = message.message;
+                            match create_serialcom(
+                                file_content,
+                                configuration.serial_port.to_string(),
+                                configuration.baud_rate,
+                            ) {
+                                Ok(response) => {
+
+                                }
+                                Err(e) => {
+                                    error!("{:?}", e);
+
+                                    let since_epoch = now
+                                        .duration_since(UNIX_EPOCH)
+                                        .expect("Time went backwards");
+                                    let timestamp = since_epoch.as_secs();
+
+                                    // Define response message
+                                    let message_sender = MessageSender {
+                                        message_type: "MessageSenderError".to_string(),
+                                        message: "Error executing command".to_string(),
+                                        raw_message: "Error executing command".to_string(),
+                                        timestamp,
+                                    };
+
+                                    send_message_back(message_sender, &mut ws_write).await?;
+                                }
+                            }
+                        }
                         MessageType::Unsafe => {
                             let cmd = message.message;
                             match create_serialcom(

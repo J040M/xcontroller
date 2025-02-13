@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum MessageType {
     GCommand,
     SerialConfig,
+    FileUpload,
     Unsafe,
 }
 

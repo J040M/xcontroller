@@ -101,6 +101,33 @@ fn write_to_port<T: Write>(port: &mut T, command: &[u8]) -> io::Result<()> {
     }
 }
 
+pub fn write_file_to_sd_card(
+    file_content: &str,
+    serial_port: String,
+    baud_rate: u32,
+) -> Result<String, ()> {
+    // get the first line
+    let first_line = file_content.lines().next().unwrap();
+    // remove the first character that will always be ";"
+    let first_line = &first_line[1..];
+    //remove everything after the first "."
+    let file_name = first_line.split('.').next().unwrap();
+
+    let command = format!("M28 {}.gcode", file_name);
+    create_serialcom(&command, serial_port, baud_rate)
+
+
+
+}
+
+fn calculate_checksum(data: &[u8]) -> u8 {
+    let mut checksum: u8 = 0;
+    for byte in data {
+        checksum ^= byte;
+    }
+    checksum
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
