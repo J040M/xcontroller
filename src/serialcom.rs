@@ -136,11 +136,27 @@ pub fn write_file_to_sd_card(
     info!("Sent: {}", start_command.trim());
 
     // Write file content but this should go in chunks (per line) and line number (Nx) and checksum (*x)
-    if let Err(e) = port.write_all(file_content.as_bytes()) {
-        error!("Failed to write file content: {}", e);
-        return Err(());
+    for (i, line) in file_content.lines().enumerate() {
+        let line_number = format!("N{}\r\n", i);
+        let checksum = format!("*{}\r\n", xor_checksum(line));
+
+        let command = format!("{} {} {}\r\n", line_number, line, checksum);
+        if let Err(e) = port.write_all(command.as_bytes()) {
+            error!("Failed to write checksum: {}", e);
+            return Err(());
+        }
+
+        if let Ok(response) = read_from_port(&mut port) {
+            info!("{}", response);
+            if response != "ok\r\n" {
+                error!("Failed to write line: {}", line);
+                return Err(());
+            }
+        } else {
+            error!("Failed to read read_from_port");
+            return Err(());
+        }
     }
-    info!("File content sent");
 
     // End file transfer
     if let Err(e) = port.write_all(end_command.as_bytes()) {
@@ -148,7 +164,7 @@ pub fn write_file_to_sd_card(
         return Err(());
     }
     info!("Sent: {}", end_command.trim());
-
+    info!("File transfer completed");
     Ok("File transfer completed".to_string())
 }
 

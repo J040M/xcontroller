@@ -10,7 +10,7 @@ use tokio_tungstenite::{
 use tungstenite::Message;
 
 use crate::commands::g_command;
-use crate::serialcom::create_serialcom;
+use crate::serialcom::{create_serialcom, write_file_to_sd_card};
 
 use crate::parser::{m105, m114, m115, m119, m20, m33};
 use crate::structs::MessageSender;
@@ -186,13 +186,28 @@ async fn handle_connection(
                         }
                         MessageType::FileUpload => {
                             let file_content = message.message;
-                            match create_serialcom(
+                            match write_file_to_sd_card(
                                 file_content,
                                 configuration.serial_port.to_string(),
                                 configuration.baud_rate,
                             ) {
                                 Ok(response) => {
+                                    debug!("{:?}", response);
 
+                                    // Get timestamp
+                                    let since_epoch = now
+                                        .duration_since(UNIX_EPOCH)
+                                        .expect("Time went backwards");
+                                    let timestamp = since_epoch.as_secs();
+
+                                    let message_sender = MessageSender {
+                                        message_type: "MessageSender".to_string(),
+                                        message: response.to_string().clone(),
+                                        raw_message: response,
+                                        timestamp,
+                                    };
+
+                                    send_message_back(message_sender, &mut ws_write).await?;                       
                                 }
                                 Err(e) => {
                                     error!("{:?}", e);
@@ -205,8 +220,8 @@ async fn handle_connection(
                                     // Define response message
                                     let message_sender = MessageSender {
                                         message_type: "MessageSenderError".to_string(),
-                                        message: "Error executing command".to_string(),
-                                        raw_message: "Error executing command".to_string(),
+                                        message: "Error uploading file".to_string(),
+                                        raw_message: "Error uploading file".to_string(),
                                         timestamp,
                                     };
 
@@ -216,7 +231,7 @@ async fn handle_connection(
                         }
                         MessageType::Unsafe => {
                             let cmd = message.message;
-                            match create_serialcom(
+                            match write_file_to_sd_card(
                                 cmd,
                                 configuration.serial_port.to_string(),
                                 configuration.baud_rate,
