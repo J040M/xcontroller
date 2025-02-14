@@ -115,7 +115,7 @@ pub fn write_file_to_sd_card(
 
     let start_command = format!("M28 {}.gcode\r\n", file_name);
     let end_command = format!("M29\r\n");
-    
+
     // Open serial port and store the connection
     let mut port = match serialport::new(&serial_port, baud_rate)
         .timeout(Duration::from_secs(TIMEOUT))
@@ -137,24 +137,38 @@ pub fn write_file_to_sd_card(
 
     // Write file content but this should go in chunks (per line) and line number (Nx) and checksum (*x)
     for (i, line) in file_content.lines().enumerate() {
-        let line_number = format!("N{}\r\n", i);
-        let checksum = format!("*{}\r\n", xor_checksum(line));
+        let line_number = format!("N{}", i + 1);
+        let checksum = format!("*{}", xor_checksum(line));
 
-        let command = format!("{} {} {}\r\n", line_number, line, checksum);
+        let mut command = "".to_string();
+
+        //if line starts with ; the it should not have line number and checksum
+        if line.starts_with(";") {
+            // print!("{}", line);
+            command = format!("{}", line);
+        } else {
+            // print!("Sent: {}", line);
+            command = format!("{} {}{}", line_number, line, checksum);
+        }
+
         if let Err(e) = port.write_all(command.as_bytes()) {
             error!("Failed to write checksum: {}", e);
             return Err(());
         }
 
-        if let Ok(response) = read_from_port(&mut port) {
-            info!("{}", response);
-            if response != "ok\r\n" {
-                error!("Failed to write line: {}", line);
+        // Wait for "ok" response
+        match read_from_port(&mut port) {
+            Ok(response) => {
+                info!("Received: {}", response.trim());
+                if !response.trim().starts_with("ok") {
+                    error!("Unexpected response: {}", response);
+                    return Err(());
+                }
+            }
+            Err(e) => {
+                error!("Failed to read response: {}", e);
                 return Err(());
             }
-        } else {
-            error!("Failed to read read_from_port");
-            return Err(());
         }
     }
 
@@ -163,6 +177,7 @@ pub fn write_file_to_sd_card(
         error!("Failed to write end command: {}", e);
         return Err(());
     }
+
     info!("Sent: {}", end_command.trim());
     info!("File transfer completed");
     Ok("File transfer completed".to_string())
