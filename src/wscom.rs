@@ -129,6 +129,7 @@ async fn handle_connection(
                                             };
 
                                             if &response != "ok" {
+                                                message_sender.message_type = cmd.trim().to_string();
                                                 message_sender.message = match cmd.trim() {
                                                     "M20" => {
                                                         let response = m20(response);
@@ -136,7 +137,12 @@ async fn handle_connection(
                                                             "Failed to serialize messge into JSON",
                                                         )
                                                     }
-                                                    "M33" => m33(response),
+                                                    "M33" => {
+                                                        let response = m33(response);
+                                                        serde_json::to_string(&response).expect(
+                                                            "Failed to serialize messge into JSON",
+                                                        )
+                                                    },
                                                     "M105" => {
                                                         let response = m105(response);
                                                         serde_json::to_string(&response).expect(
@@ -201,7 +207,7 @@ async fn handle_connection(
                                     let timestamp = since_epoch.as_secs();
 
                                     let message_sender = MessageSender {
-                                        message_type: "MessageSender".to_string(),
+                                        message_type: "FileUpload".to_string(),
                                         message: response.to_string().clone(),
                                         raw_message: response,
                                         timestamp,
@@ -231,7 +237,7 @@ async fn handle_connection(
                         }
                         MessageType::Unsafe => {
                             let cmd = message.message;
-                            match write_file_to_sd_card(
+                            match create_serialcom(
                                 cmd,
                                 configuration.serial_port.to_string(),
                                 configuration.baud_rate,
@@ -246,7 +252,7 @@ async fn handle_connection(
                                     let timestamp = since_epoch.as_secs();
 
                                     let message_sender = MessageSender {
-                                        message_type: "MessageSender".to_string(),
+                                        message_type: "Unsafe".to_string(),
                                         message: response.to_string().clone(),
                                         raw_message: response,
                                         timestamp,
