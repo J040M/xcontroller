@@ -113,17 +113,49 @@ pub fn write_file_to_sd_card(
     //remove everything after the first "."
     let file_name = first_line.split('.').next().unwrap();
 
-    let command = format!("M28 {}.gcode", file_name);
-    create_serialcom(&command, serial_port, baud_rate)
+    let start_command = format!("M28 {}.gcode\r\n", file_name);
+    let end_command = format!("M29\r\n");
+    
+    // Open serial port and store the connection
+    let mut port = match serialport::new(&serial_port, baud_rate)
+        .timeout(Duration::from_secs(TIMEOUT))
+        .open()
+    {
+        Ok(port) => port,
+        Err(e) => {
+            error!("Failed to open COM port: {}", e);
+            return Err(());
+        }
+    };
 
+    // Start file transfer
+    if let Err(e) = port.write_all(start_command.as_bytes()) {
+        error!("Failed to write start command: {}", e);
+        return Err(());
+    }
+    info!("Sent: {}", start_command.trim());
 
+    // Write file content but this should go in chunks (per line) and line number (Nx) and checksum (*x)
+    if let Err(e) = port.write_all(file_content.as_bytes()) {
+        error!("Failed to write file content: {}", e);
+        return Err(());
+    }
+    info!("File content sent");
 
+    // End file transfer
+    if let Err(e) = port.write_all(end_command.as_bytes()) {
+        error!("Failed to write end command: {}", e);
+        return Err(());
+    }
+    info!("Sent: {}", end_command.trim());
+
+    Ok("File transfer completed".to_string())
 }
 
-fn calculate_checksum(data: &[u8]) -> u8 {
-    let mut checksum: u8 = 0;
-    for byte in data {
-        checksum ^= byte;
+fn xor_checksum(cmd: &str) -> u8 {
+    let mut checksum = 0u8;
+    for c in cmd.chars() {
+        checksum ^= c as u8; // XOR with the ASCII value of the character
     }
     checksum
 }
