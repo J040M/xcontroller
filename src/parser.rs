@@ -16,7 +16,7 @@ pub fn m20(message: String) -> Vec<String> {
     for part in parts {
         let file_parts: Vec<&str> = part.split_whitespace().collect();
         for part in file_parts {
-            if part.contains(".gcode") {
+            if part.contains(".gco") || part.contains(".GCO") {
                 files.push(part.to_string());
             }
         }
@@ -37,7 +37,8 @@ pub fn m33(message: String) -> String {
     for part in parts {
         let file_parts: Vec<&str> = part.split_whitespace().collect();
         for part in file_parts {
-            if part.contains(".gcode") {
+            if part.contains(".gco") || part.contains(".GCO") ||
+                part.contains(".gcode") || part.contains(".GCODE") {
                 file_path = part.to_string();
             }
         }
@@ -218,14 +219,26 @@ mod tests {
 
     #[test]
     fn test_m20_parser() {
-        let sample_response =
-            "Begin file list\nfile1.gcode\nfile2.gcode\nsubdir/file3.gcode\nEnd file list"
-                .to_string();
+        let sample_response = "Begin file list
+            FILE.GCO 0
+            TEST1.GCO 0
+            TEST2.GCO 0
+            TEST3.GCO 0
+            FILE3.GCO 0
+            FILE5.GCO 0
+            FILE6.GCO 0
+            FILE7.GCO 0
+            FILE8.GCO 0
+            FILE9.GCO 0
+            FILE11.GCO 5
+            End file list
+            ok".to_string();
+
         let files = m20(sample_response);
-        assert_eq!(files.len(), 3);
-        assert!(files.contains(&"file1.gcode".to_string()));
-        assert!(files.contains(&"file2.gcode".to_string()));
-        assert!(files.contains(&"subdir/file3.gcode".to_string()));
+        assert_eq!(files.len(), 11);
+        assert!(files.contains(&"FILE.GCO".to_string()));
+        assert!(files.contains(&"TEST1.GCO".to_string()));
+        assert!(files.contains(&"TEST2.GCO".to_string()));
     }
 
     #[test]
