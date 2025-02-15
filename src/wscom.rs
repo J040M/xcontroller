@@ -93,7 +93,9 @@ async fn handle_connection(
             // Parse and validate the commands.
             let data = msg.to_text()?;
 
-            match serde_json::from_str::<MessageWS>(data) {
+            let data = data.replace("\n", "\\n");
+
+            match serde_json::from_str::<MessageWS>(&data) {
                 Ok(message) => {
                     info!("Message received: {}", message.message);
 
@@ -103,11 +105,11 @@ async fn handle_connection(
                     match message.message_type {
                         MessageType::GCommand => {
                             debug!("Config: {}", message.message);
-                            let result = g_command(message.message);
+                            let result = g_command(&message.message);
                             match result {
                                 Ok(cmd) => {
                                     match create_serialcom(
-                                        cmd,
+                                        &cmd,
                                         configuration.serial_port.to_string(),
                                         configuration.baud_rate,
                                     ) {
@@ -129,7 +131,8 @@ async fn handle_connection(
                                             };
 
                                             if &response != "ok" {
-                                                message_sender.message_type = cmd.trim().to_string();
+                                                message_sender.message_type =
+                                                    cmd.trim().to_string();
                                                 message_sender.message = match cmd.trim() {
                                                     "M20" => {
                                                         let response = m20(response);
@@ -142,7 +145,7 @@ async fn handle_connection(
                                                         serde_json::to_string(&response).expect(
                                                             "Failed to serialize messge into JSON",
                                                         )
-                                                    },
+                                                    }
                                                     "M105" => {
                                                         let response = m105(response);
                                                         serde_json::to_string(&response).expect(
@@ -193,7 +196,7 @@ async fn handle_connection(
                         MessageType::FileUpload => {
                             let file_content = message.message;
                             match write_file_to_sd_card(
-                                file_content,
+                                &file_content,
                                 configuration.serial_port.to_string(),
                                 configuration.baud_rate,
                             ) {
@@ -213,7 +216,7 @@ async fn handle_connection(
                                         timestamp,
                                     };
 
-                                    send_message_back(message_sender, &mut ws_write).await?;                       
+                                    send_message_back(message_sender, &mut ws_write).await?;
                                 }
                                 Err(e) => {
                                     error!("{:?}", e);
@@ -238,7 +241,7 @@ async fn handle_connection(
                         MessageType::Unsafe => {
                             let cmd = message.message;
                             match create_serialcom(
-                                cmd,
+                                &cmd,
                                 configuration.serial_port.to_string(),
                                 configuration.baud_rate,
                             ) {
@@ -282,7 +285,10 @@ async fn handle_connection(
                         }
                     }
                 }
-                Err(_) => todo!(),
+                Err(_) => {
+                    print!("Invalid message received");
+                    todo!()
+                },
             }
         }
     }

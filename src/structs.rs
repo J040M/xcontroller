@@ -11,9 +11,9 @@ pub enum MessageType {
 
 /// Used for received messages
 #[derive(Debug, Serialize, Deserialize)]
-pub struct MessageWS<'a> {
+pub struct MessageWS {
     pub message_type: MessageType,
-    pub message: &'a str,
+    pub message: String,
 }
 
 /// M115 - Firmware and Capabilities
