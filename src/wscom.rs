@@ -199,6 +199,7 @@ async fn handle_connection(
                                 &file_content,
                                 configuration.serial_port.to_string(),
                                 configuration.baud_rate,
+                                || {},
                             ) {
                                 Ok(response) => {
                                     debug!("{:?}", response);

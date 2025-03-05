@@ -105,6 +105,7 @@ pub fn write_file_to_sd_card(
     file_content: &str,
     serial_port: String,
     baud_rate: u32,
+    send_message_back: fn()
 ) -> Result<String, ()> {
     // get the first line
     let first_line = file_content.lines().next().unwrap();
@@ -135,6 +136,8 @@ pub fn write_file_to_sd_card(
     }
     info!("Sent: {}", start_command.trim());
 
+    read_from_port_for_sd_card(&mut port, send_message_back).unwrap();
+
     // Write file content but this should go in chunks (per line) and line number (Nx) and checksum (*x)
     for (i, line) in file_content.lines().enumerate() {
         let line_number = format!("N{}", i + 1);
@@ -156,20 +159,7 @@ pub fn write_file_to_sd_card(
             return Err(());
         }
 
-        // Wait for "ok" response
-        match read_from_port(&mut port) {
-            Ok(response) => {
-                info!("Received: {}", response.trim());
-                if !response.trim().starts_with("ok") {
-                    error!("Unexpected response: {}", response);
-                    return Err(());
-                }
-            }
-            Err(e) => {
-                error!("Failed to read response: {}", e);
-                return Err(());
-            }
-        }
+        read_from_port_for_sd_card(&mut port, send_message_back).unwrap();
     }
 
     // End file transfer
@@ -178,9 +168,36 @@ pub fn write_file_to_sd_card(
         return Err(());
     }
 
+    read_from_port_for_sd_card(&mut port, send_message_back).unwrap();
+
     info!("Sent: {}", end_command.trim());
     info!("File transfer completed");
     Ok("File transfer completed".to_string())
+}
+
+fn read_from_port_for_sd_card<T: Read>(port: &mut T, send_message_back: fn()) -> io::Result<String> {
+    let mut serial_buffer = [0u8; 1024];
+    let timeout_duration = Duration::from_millis(4000); // Adjust as needed
+    let start_time = Instant::now();
+    let mut last_char_time = Instant::now();
+
+    loop {
+        match port.read(serial_buffer.as_mut_slice()) {
+            Ok(bytes_read) if bytes_read > 0 => {
+                match std::str::from_utf8(&serial_buffer[0..bytes_read]) {
+                    Ok(res) => {
+                        send_message_back(res);
+                        return Ok(res.to_string());
+                    }
+                    Err(err) => {
+                        debug!("Invalid UTF-8 sequence: {}", err);
+                    }
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
 }
 
 fn xor_checksum(cmd: &str) -> u8 {
