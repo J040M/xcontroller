@@ -73,7 +73,7 @@ async fn handle_connection(
         >,
     ) -> Result<()> {
         let json_str =
-            serde_json::to_string(&message).expect("Failed to serialize messge into JSON");
+            serde_json::to_string(&message).expect("Failed to serialize message into JSON");
         let resp_message = Message::Text(json_str);
 
         if let Err(e) = ws_write.send(resp_message).await {
@@ -133,37 +133,37 @@ async fn handle_connection(
                                                     "M20" => {
                                                         let response = m20(response);
                                                         serde_json::to_string(&response).expect(
-                                                            "Failed to serialize messge into JSON",
+                                                            "Failed to serialize message into JSON",
                                                         )
                                                     }
                                                     "M33" => {
                                                         let response = m33(response);
                                                         serde_json::to_string(&response).expect(
-                                                            "Failed to serialize messge into JSON",
+                                                            "Failed to serialize message into JSON",
                                                         )
                                                     },
                                                     "M105" => {
                                                         let response = m105(response);
                                                         serde_json::to_string(&response).expect(
-                                                            "Failed to serialize messge into JSON",
+                                                            "Failed to serialize message into JSON",
                                                         )
                                                     }
                                                     "M114" => {
                                                         let response = m114(response);
                                                         serde_json::to_string(&response).expect(
-                                                            "Failed to serialize messge into JSON",
+                                                            "Failed to serialize message into JSON",
                                                         )
                                                     }
                                                     "M115" => {
                                                         let response = m115(response);
                                                         serde_json::to_string(&response).expect(
-                                                            "Failed to serialize messge into JSON",
+                                                            "Failed to serialize message into JSON",
                                                         )
                                                     }
                                                     "M119" => {
                                                         let response = m119(response);
                                                         serde_json::to_string(&response).expect(
-                                                            "Failed to serialize messge into JSON",
+                                                            "Failed to serialize message into JSON",
                                                         )
                                                     }
                                                     _ => response.to_string(),
