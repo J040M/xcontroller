@@ -352,7 +352,7 @@ mod tests {
     fn test_m27_printing() {
         let sample_response = "SD printing byte 2812/1798968 ok".to_string();
         let status = m27(sample_response);
-        
+
         assert_eq!(status, "0.2"); // Rounded to one decimal place
     }
 
