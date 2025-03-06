@@ -12,7 +12,7 @@ use tungstenite::Message;
 use crate::commands::g_command;
 use crate::serialcom::create_serialcom;
 
-use crate::parser::{m105, m114, m115, m119, m20, m33};
+use crate::parser::{m105, m114, m115, m119, m20, m27, m31, m33};
 use crate::structs::MessageSender;
 use crate::Config;
 use crate::MessageType;
@@ -136,12 +136,24 @@ async fn handle_connection(
                                                             "Failed to serialize message into JSON",
                                                         )
                                                     }
+                                                    "M27" => {
+                                                        let response = m27(response);
+                                                        serde_json::to_string(&response).expect(
+                                                            "Failed to serialize message into JSON",
+                                                        )
+                                                    }
+                                                    "M31" => {
+                                                        let response = m31(response);
+                                                        serde_json::to_string(&response).expect(
+                                                            "Failed to serialize message into JSON",
+                                                        )
+                                                    }
                                                     "M33" => {
                                                         let response = m33(response);
                                                         serde_json::to_string(&response).expect(
                                                             "Failed to serialize message into JSON",
                                                         )
-                                                    },
+                                                    }
                                                     "M105" => {
                                                         let response = m105(response);
                                                         serde_json::to_string(&response).expect(
@@ -169,7 +181,6 @@ async fn handle_connection(
                                                     _ => response.to_string(),
                                                 };
                                             }
-                                            // Return response to WS clients
                                             send_message_back(message_sender, &mut ws_write)
                                                 .await?;
                                         }
@@ -184,10 +195,8 @@ async fn handle_connection(
                             }
                         }
                         MessageType::SerialConfig => {
+                            // Not yet implemented, changes to the config loading is required
                             debug!("SerialConfig: {}", message.message);
-                            // Test GCode for printer info
-                            // cmd = "M115";
-                            //Expects message.message to be ex: /dev/USBtty01;119200
                         }
                         MessageType::Terminal => {
                             let cmd = message.message;
