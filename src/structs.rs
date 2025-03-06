@@ -6,6 +6,7 @@ pub enum MessageType {
     GCommand,
     SerialConfig,
     Unsafe,
+    Terminal,
 }
 
 /// Used for received messages
