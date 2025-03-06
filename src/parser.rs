@@ -26,17 +26,14 @@ pub fn m20(message: String) -> Vec<String> {
 }
 
 /**
- * Get SD printing status
+ * Get SD printing status, currently not parsing file name
  * @param message: String, return message from firmware
  * @return String, percentage of the print or "not-printing"
  */
 pub fn m27(message: String) -> String {
-    if message.contains("Not SD printing") {
+    if message.contains("Not SD printing") || message.contains("Current file:(no file)") {
         return "not-printing".to_string();
     }
-
-    if message.contains("Current file:"){}
-    if message.contains("Current file:(no file)"){}
 
     if message.contains("SD printing byte") {
         let re = Regex::new(r"SD printing byte\s+(\d+)/(\d+)").unwrap();
@@ -277,8 +274,7 @@ mod tests {
     #[test]
     fn test_m20_parser() {
         let sample_response =
-            "Begin file list\nfile1.GCO\nfile2.GCO\nsubdir/file3.GCO\nEnd file list"
-                .to_string();
+            "Begin file list\nfile1.GCO\nfile2.GCO\nsubdir/file3.GCO\nEnd file list".to_string();
         let files = m20(sample_response);
         assert_eq!(files.len(), 3);
         assert!(files.contains(&"file1.GCO".to_string()));
