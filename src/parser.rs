@@ -26,6 +26,61 @@ pub fn m20(message: String) -> Vec<String> {
 }
 
 /**
+ * Get SD printing status
+ * @param message: String, return message from firmware
+ * @return String, percentage of the print or "not-printing"
+ */
+pub fn m27(message: String) -> String {
+    if message.contains("Not SD printing") {
+        return "not-printing".to_string();
+    }
+
+    if message.contains("SD printing byte") {
+        let re = Regex::new(r"SD printing byte\s+(\d+)/(\d+)").unwrap();
+
+        if let Some(captures) = re.captures(&message) {
+            let current_str = captures.get(1).map_or("0", |m| m.as_str());
+            let total_str = captures.get(2).map_or("1", |m| m.as_str());
+
+            if let (Ok(current), Ok(total)) = (current_str.parse::<f64>(), total_str.parse::<f64>())
+            {
+                if total > 0.0 {
+                    let percentage = (current / total) * 100.0;
+                    return format!("{:.1}", percentage);
+                }
+            } else {
+                debug!("Failed to parse printing progress values");
+            }
+        } else {
+            debug!("Failed to find printing progress values");
+        }
+    }
+
+    "not-printing".to_string()
+}
+
+/**
+ * Get print time from completed print
+ * @param message: String, return message from firmware
+ * @return String, print time or "not-printing" if no print or 0s print time
+ */
+pub fn m31(message: String) -> String {
+    let re = Regex::new(r"Print time:\s+([0-9]+[hm]?\s+[0-9]+[ms]|[0-9]+[s])").unwrap();
+
+    if let Some(captures) = re.captures(&message) {
+        let print_time = captures.get(1).map_or("", |m| m.as_str()).trim();
+
+        if print_time == "0s" {
+            return "not-printing".to_string();
+        }
+
+        return print_time.to_string();
+    }
+
+    "not-printing".to_string()
+}
+
+/**
  * Get long path of a single file
  * @param message: String, return message from firmware
  * @return String, return long path of single file
@@ -284,5 +339,70 @@ mod tests {
         assert_eq!(status.x_min, "TRIGGERED");
         assert_eq!(status.y_min, "open");
         assert_eq!(status.z_min, "open");
+    }
+
+    #[test]
+    fn test_m27_not_printing() {
+        let sample_response = "Not SD printing ok".to_string();
+        let status = m27(sample_response);
+        assert_eq!(status, "not-printing");
+    }
+
+    #[test]
+    fn test_m27_printing() {
+        let sample_response = "SD printing byte 2812/1798968 ok".to_string();
+        let status = m27(sample_response);
+        
+        assert_eq!(status, "0.2"); // Rounded to one decimal place
+    }
+
+    #[test]
+    fn test_m27_printing_complete() {
+        let sample_response = "SD printing byte 1798968/1798968 ok".to_string();
+        let status = m27(sample_response);
+        assert_eq!(status, "100.0");
+    }
+
+    #[test]
+    fn test_m27_printing_start() {
+        let sample_response = "SD printing byte 0/1798968 ok".to_string();
+        let status = m27(sample_response);
+        assert_eq!(status, "0.0");
+    }
+
+    #[test]
+    fn test_m31_no_print_time() {
+        let sample_response = "ok".to_string();
+        let print_time = m31(sample_response);
+        assert_eq!(print_time, "not-printing");
+    }
+
+    #[test]
+    fn test_m31_zero_seconds() {
+        let sample_response = "echo:Print time: 0s ok".to_string();
+        let print_time = m31(sample_response);
+        assert_eq!(print_time, "not-printing");
+    }
+
+    #[test]
+    fn test_m31_with_time() {
+        let sample_response = "echo:Print time: 9m 33s ok".to_string();
+        let print_time = m31(sample_response);
+        assert_eq!(print_time, "9m 33s");
+    }
+
+    #[test]
+    fn test_m31_with_temperatures() {
+        let sample_response =
+            "ok T:198.61 /200.00 B:49.98 /50.00 @:106 B@:27 echo:Print time: 9m 33s ok".to_string();
+        let print_time = m31(sample_response);
+        assert_eq!(print_time, "9m 33s");
+    }
+
+    #[test]
+    fn test_m31_hours_minutes() {
+        let sample_response = "echo:Print time: 2h 45m ok".to_string();
+        let print_time = m31(sample_response);
+        assert_eq!(print_time, "2h 45m");
     }
 }
