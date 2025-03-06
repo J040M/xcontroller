@@ -12,7 +12,7 @@ use tungstenite::Message;
 use crate::commands::g_command;
 use crate::serialcom::create_serialcom;
 
-use crate::parser::{m105, m114, m115, m119, m20, m33};
+use crate::parser::{m105, m114, m115, m119, m20, m27, m31, m33};
 use crate::structs::MessageSender;
 use crate::Config;
 use crate::MessageType;
@@ -73,7 +73,7 @@ async fn handle_connection(
         >,
     ) -> Result<()> {
         let json_str =
-            serde_json::to_string(&message).expect("Failed to serialize messge into JSON");
+            serde_json::to_string(&message).expect("Failed to serialize message into JSON");
         let resp_message = Message::Text(json_str);
 
         if let Err(e) = ws_write.send(resp_message).await {
@@ -122,7 +122,7 @@ async fn handle_connection(
 
                                             // Define response message
                                             let mut message_sender = MessageSender {
-                                                message_type: "MessageSender".to_string(),
+                                                message_type: cmd.to_string(),
                                                 message: "".to_string(),
                                                 raw_message: response.clone(),
                                                 timestamp,
@@ -133,38 +133,54 @@ async fn handle_connection(
                                                     "M20" => {
                                                         let response = m20(response);
                                                         serde_json::to_string(&response).expect(
-                                                            "Failed to serialize messge into JSON",
+                                                            "Failed to serialize message into JSON",
                                                         )
                                                     }
-                                                    "M33" => m33(response),
+                                                    "M27" => {
+                                                        let response = m27(response);
+                                                        serde_json::to_string(&response).expect(
+                                                            "Failed to serialize message into JSON",
+                                                        )
+                                                    }
+                                                    "M31" => {
+                                                        let response = m31(response);
+                                                        serde_json::to_string(&response).expect(
+                                                            "Failed to serialize message into JSON",
+                                                        )
+                                                    }
+                                                    "M33" => {
+                                                        let response = m33(response);
+                                                        serde_json::to_string(&response).expect(
+                                                            "Failed to serialize message into JSON",
+                                                        )
+                                                    }
                                                     "M105" => {
                                                         let response = m105(response);
                                                         serde_json::to_string(&response).expect(
-                                                            "Failed to serialize messge into JSON",
+                                                            "Failed to serialize message into JSON",
                                                         )
                                                     }
                                                     "M114" => {
                                                         let response = m114(response);
                                                         serde_json::to_string(&response).expect(
-                                                            "Failed to serialize messge into JSON",
+                                                            "Failed to serialize message into JSON",
                                                         )
                                                     }
                                                     "M115" => {
                                                         let response = m115(response);
                                                         serde_json::to_string(&response).expect(
-                                                            "Failed to serialize messge into JSON",
+                                                            "Failed to serialize message into JSON",
                                                         )
                                                     }
                                                     "M119" => {
                                                         let response = m119(response);
                                                         serde_json::to_string(&response).expect(
-                                                            "Failed to serialize messge into JSON",
+                                                            "Failed to serialize message into JSON",
                                                         )
                                                     }
                                                     _ => response.to_string(),
                                                 };
                                             }
-                                            // Return response to WS clients
                                             send_message_back(message_sender, &mut ws_write)
                                                 .await?;
                                         }
@@ -179,10 +195,53 @@ async fn handle_connection(
                             }
                         }
                         MessageType::SerialConfig => {
+                            // Not yet implemented, changes to the config loading is required
                             debug!("SerialConfig: {}", message.message);
-                            // Test GCode for printer info
-                            // cmd = "M115";
-                            //Expects message.message to be ex: /dev/USBtty01;119200
+                        }
+                        MessageType::Terminal => {
+                            let cmd = message.message;
+                            match create_serialcom(
+                                cmd,
+                                configuration.serial_port.to_string(),
+                                configuration.baud_rate,
+                            ) {
+                                Ok(response) => {
+                                    debug!("{:?}", response);
+
+                                    // Get timestamp
+                                    let since_epoch = now
+                                        .duration_since(UNIX_EPOCH)
+                                        .expect("Time went backwards");
+                                    let timestamp = since_epoch.as_secs();
+
+                                    let message_sender = MessageSender {
+                                        message_type: "terminal".to_string(),
+                                        message: response.to_string().clone(),
+                                        raw_message: response,
+                                        timestamp,
+                                    };
+
+                                    send_message_back(message_sender, &mut ws_write).await?;
+                                }
+                                Err(e) => {
+                                    error!("{:?}", e);
+
+                                    let since_epoch = now
+                                        .duration_since(UNIX_EPOCH)
+                                        .expect("Time went backwards");
+                                    let timestamp = since_epoch.as_secs();
+
+                                    // Define response message
+                                    let message_sender = MessageSender {
+                                        message_type: "MessageSenderError".to_string(),
+                                        message: "Error executing command".to_string(),
+                                        raw_message: "Error executing command".to_string(),
+                                        timestamp,
+                                    };
+
+                                    send_message_back(message_sender, &mut ws_write).await?;
+                                }
+                            }
                         }
                         MessageType::Unsafe => {
                             let cmd = message.message;
@@ -201,7 +260,7 @@ async fn handle_connection(
                                     let timestamp = since_epoch.as_secs();
 
                                     let message_sender = MessageSender {
-                                        message_type: "MessageSender".to_string(),
+                                        message_type: "Unsafe".to_string(),
                                         message: response.to_string().clone(),
                                         raw_message: response,
                                         timestamp,
