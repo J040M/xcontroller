@@ -1,0 +1,15 @@
+# rust
+target/
+
+# vcs
+.git/
+
+# ci
+.github/
+
+# editor
+.idea/
+.vscode/
+
+# os
+*.DS_Store

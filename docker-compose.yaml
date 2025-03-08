@@ -1,0 +1,15 @@
+services:
+  xcontroller:
+    image: xcontroller
+    build: .
+    privileged: true
+    container_name: xcontroller
+    environment:
+      - WEBSOCKET_PORT=9002
+      - SERIAL_PORT=/dev/ttyUSB0
+      - BAUDRATE=115200
+      - TEST_MODE=true
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyUSB0"
+    ports:
+      - "9002:9002"
