@@ -134,30 +134,42 @@ pub fn m105(message: String) -> Temperatures {
  * @return AxePositions, current position of the axes
  */
 pub fn m114(message: String) -> AxePositions {
-    let parts: Vec<&str> = message.split("\n").collect();
-    let mut axes = AxePositions { x: 0, y: 0, z: 0 };
-
-    for upart in parts {
-        let set_parts: Vec<&str> = upart.split_whitespace().collect();
-        for part in set_parts {
-            if part.contains("X") || part.contains("Y") || part.contains("Z") {
-                let axe_parts: Vec<&str> = part.split(":").collect();
-                let axis = axe_parts[0];
-                let value: i8 = axe_parts[1].parse().unwrap(); // Parse the value to an integer
-
-                match axis {
-                    "X" => axes.x = value,
-                    "Y" => axes.y = value,
-                    "Z" => axes.z = value,
-                    _ => {
-                        debug!("Unmanged axis value: {:?}", axe_parts);
-                    }
-                }
-            }
+    let mut axes = AxePositions { x: 0.0, y: 0.0, z: 0.0 };
+    
+    // Looking for the part before "Count"
+    if let Some(position_part) = message.split("Count").next() {
+        // Extract X position
+        if let Some(x_val) = extract_float_value(position_part, "X:") {
+            axes.x = x_val;
+        }
+        
+        // Extract Y position
+        if let Some(y_val) = extract_float_value(position_part, "Y:") {
+            axes.y = y_val;
+        }
+        
+        // Extract Z position
+        if let Some(z_val) = extract_float_value(position_part, "Z:") {
+            axes.z = z_val;
         }
     }
-
+    
     axes
+}
+
+// Helper function to extract float values from the position string
+fn extract_float_value(text: &str, prefix: &str) -> Option<f32> {
+    if let Some(pos) = text.find(prefix) {
+        let value_str = &text[pos + prefix.len()..];
+        if let Some(end) = value_str.find(|c: char| !c.is_digit(10) && c != '.') {
+            let value = &value_str[..end];
+            return value.parse().ok();
+        } else {
+            // If we don't find an ending character, try to parse the rest
+            return value_str.parse().ok();
+        }
+    }
+    None
 }
 
 /**
@@ -307,11 +319,11 @@ mod tests {
 
     #[test]
     fn test_m114_parser() {
-        let sample_response = "X:10 Y:20 Z:30 E:0 Count X:10 Y:20 Z:30".to_string();
+        let sample_response = "echo:busy:X:149.20 Y:120.90 Z:11.11 E:0.00 Count X:11936 Y:9672 Z:4444".to_string();
         let axes = m114(sample_response);
-        assert_eq!(axes.x, 10);
-        assert_eq!(axes.y, 20);
-        assert_eq!(axes.z, 30);
+        assert_eq!(axes.x, 149.20);
+        assert_eq!(axes.y, 120.90);
+        assert_eq!(axes.z, 11.11);
     }
 
     #[test]
