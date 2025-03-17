@@ -35,6 +35,15 @@ pub fn m27(message: String) -> String {
         return "not-printing".to_string();
     }
 
+    //TODO: parsing file name
+    if message.contains("Current file:") && !message.contains("(no file)") {
+        let re = Regex::new(r"Current file:\s+([^\s]+)").unwrap();
+        if let Some(captures) = re.captures(&message) {
+            let filename = captures.get(1).map_or("", |m| m.as_str());
+            return filename.to_string();
+        }
+    }
+
     if message.contains("SD printing byte") {
         let re = Regex::new(r"SD printing byte\s+(\d+)/(\d+)").unwrap();
 
@@ -367,6 +376,27 @@ mod tests {
         let sample_response = "SD printing byte 0/1798968 ok".to_string();
         let status = m27(sample_response);
         assert_eq!(status, "0.0");
+    }
+
+    #[test]
+    fn test_m27_current_file() {
+        let sample_response = "Current file: test_file.gcode ok".to_string();
+        let status = m27(sample_response);
+        assert_eq!(status, "test_file.gcode");
+    }
+
+    #[test]
+    fn test_m27_current_file_with_path() {
+        let sample_response = "Current file: /subfolder/test_file.gcode ok".to_string();
+        let status = m27(sample_response);
+        assert_eq!(status, "/subfolder/test_file.gcode");
+    }
+
+    #[test]
+    fn test_m27_complex_filename() {
+        let sample_response = "Current file: file-with_special.chars-123.gcode ok".to_string();
+        let status = m27(sample_response);
+        assert_eq!(status, "file-with_special.chars-123.gcode");
     }
 
     #[test]
