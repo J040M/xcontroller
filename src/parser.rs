@@ -31,10 +31,6 @@ pub fn m20(message: String) -> Vec<String> {
  * @return String, percentage of the print or "not-printing"
  */
 pub fn m27(message: String) -> String {
-    if message.contains("Not SD printing") || message.contains("Current file:(no file)") {
-        return "not-printing".to_string();
-    }
-
     //TODO: parsing file name
     if message.contains("Current file:") && !message.contains("(no file)") {
         let re = Regex::new(r"Current file:\s+([^\s]+)").unwrap();
@@ -394,9 +390,9 @@ mod tests {
 
     #[test]
     fn test_m27_complex_filename() {
-        let sample_response = "Current file: file-with_special.chars-123.gcode ok".to_string();
+        let sample_response = "Current file: BATTER~1.GCO Batterie Removel Tool 50mm.gcode ok".to_string();
         let status = m27(sample_response);
-        assert_eq!(status, "file-with_special.chars-123.gcode");
+        assert_eq!(status, "BATTER~1.GCO");
     }
 
     #[test]
