@@ -134,42 +134,33 @@ pub fn m105(message: String) -> Temperatures {
  * @return AxePositions, current position of the axes
  */
 pub fn m114(message: String) -> AxePositions {
-    let mut axes = AxePositions { x: 0.0, y: 0.0, z: 0.0 };
-    
-    // Looking for the part before "Count"
-    if let Some(position_part) = message.split("Count").next() {
-        // Extract X position
-        if let Some(x_val) = extract_float_value(position_part, "X:") {
-            axes.x = x_val;
-        }
-        
-        // Extract Y position
-        if let Some(y_val) = extract_float_value(position_part, "Y:") {
-            axes.y = y_val;
-        }
-        
-        // Extract Z position
-        if let Some(z_val) = extract_float_value(position_part, "Z:") {
-            axes.z = z_val;
-        }
-    }
-    
-    axes
-}
+    // Take only the part before "Count" if present
+    let position_part = message.split("Count").next().unwrap_or("");
 
-// Helper function to extract float values from the position string
-fn extract_float_value(text: &str, prefix: &str) -> Option<f32> {
-    if let Some(pos) = text.find(prefix) {
-        let value_str = &text[pos + prefix.len()..];
-        if let Some(end) = value_str.find(|c: char| !c.is_digit(10) && c != '.') {
-            let value = &value_str[..end];
-            return value.parse().ok();
-        } else {
-            // If we don't find an ending character, try to parse the rest
-            return value_str.parse().ok();
-        }
+    // Create a closure for extracting values by prefix
+    let extract_value = |prefix: &str| -> f32 {
+        position_part
+            .find(prefix)
+            .and_then(|pos| {
+                let start = pos + prefix.len();
+                let value_str = &position_part[start..];
+
+                // Find end position (first whitespace or end of string)
+                let end = value_str
+                    .find(char::is_whitespace)
+                    .unwrap_or(value_str.len());
+
+                value_str[..end].parse::<f32>().ok()
+            })
+            .unwrap_or(0.0)
+    };
+
+    // Use the closure to extract all three values at once
+    AxePositions {
+        x: extract_value("X:"),
+        y: extract_value("Y:"),
+        z: extract_value("Z:"),
     }
-    None
 }
 
 /**
@@ -319,7 +310,8 @@ mod tests {
 
     #[test]
     fn test_m114_parser() {
-        let sample_response = "echo:busy:X:149.20 Y:120.90 Z:11.11 E:0.00 Count X:11936 Y:9672 Z:4444".to_string();
+        let sample_response =
+            "echo:busy:X:149.20 Y:120.90 Z:11.11 E:0.00 Count X:11936 Y:9672 Z:4444".to_string();
         let axes = m114(sample_response);
         assert_eq!(axes.x, 149.20);
         assert_eq!(axes.y, 120.90);
@@ -402,7 +394,8 @@ mod tests {
 
     #[test]
     fn test_m27_complex_filename() {
-        let sample_response = "Current file: BATTER~1.GCO Batterie Removel Tool 50mm.gcode ok".to_string();
+        let sample_response =
+            "Current file: BATTER~1.GCO Batterie Removel Tool 50mm.gcode ok".to_string();
         let status = m27(sample_response);
         assert_eq!(status, "BATTER~1.GCO");
     }
