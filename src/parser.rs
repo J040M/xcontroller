@@ -16,7 +16,7 @@ pub fn m20(message: String) -> Vec<String> {
     for part in parts {
         let file_parts: Vec<&str> = part.split_whitespace().collect();
         for part in file_parts {
-            if part.contains(".gcode") {
+            if part.contains(".GCO") {
                 files.push(part.to_string());
             }
         }
@@ -26,13 +26,18 @@ pub fn m20(message: String) -> Vec<String> {
 }
 
 /**
- * Get SD printing status
+ * Get SD printing status, currently not parsing file name
  * @param message: String, return message from firmware
  * @return String, percentage of the print or "not-printing"
  */
 pub fn m27(message: String) -> String {
-    if message.contains("Not SD printing") {
-        return "not-printing".to_string();
+    //TODO: parsing file name
+    if message.contains("Current file:") && !message.contains("(no file)") {
+        let re = Regex::new(r"Current file:\s+([^\s]+)").unwrap();
+        if let Some(captures) = re.captures(&message) {
+            let filename = captures.get(1).map_or("", |m| m.as_str());
+            return filename.to_string();
+        }
     }
 
     if message.contains("SD printing byte") {
@@ -92,7 +97,7 @@ pub fn m33(message: String) -> String {
     for part in parts {
         let file_parts: Vec<&str> = part.split_whitespace().collect();
         for part in file_parts {
-            if part.contains(".gcode") {
+            if part.contains(".GCO") {
                 file_path = part.to_string();
             }
         }
@@ -129,30 +134,33 @@ pub fn m105(message: String) -> Temperatures {
  * @return AxePositions, current position of the axes
  */
 pub fn m114(message: String) -> AxePositions {
-    let parts: Vec<&str> = message.split("\n").collect();
-    let mut axes = AxePositions { x: 0, y: 0, z: 0 };
+    // Take only the part before "Count" if present
+    let position_part = message.split("Count").next().unwrap_or("");
 
-    for upart in parts {
-        let set_parts: Vec<&str> = upart.split_whitespace().collect();
-        for part in set_parts {
-            if part.contains("X") || part.contains("Y") || part.contains("Z") {
-                let axe_parts: Vec<&str> = part.split(":").collect();
-                let axis = axe_parts[0];
-                let value: i8 = axe_parts[1].parse().unwrap(); // Parse the value to an integer
+    // Create a closure for extracting values by prefix
+    let extract_value = |prefix: &str| -> f32 {
+        position_part
+            .find(prefix)
+            .and_then(|pos| {
+                let start = pos + prefix.len();
+                let value_str = &position_part[start..];
 
-                match axis {
-                    "X" => axes.x = value,
-                    "Y" => axes.y = value,
-                    "Z" => axes.z = value,
-                    _ => {
-                        debug!("Unmanged axis value: {:?}", axe_parts);
-                    }
-                }
-            }
-        }
+                // Find end position (first whitespace or end of string)
+                let end = value_str
+                    .find(char::is_whitespace)
+                    .unwrap_or(value_str.len());
+
+                value_str[..end].parse::<f32>().ok()
+            })
+            .unwrap_or(0.0)
+    };
+
+    // Use the closure to extract all three values at once
+    AxePositions {
+        x: extract_value("X:"),
+        y: extract_value("Y:"),
+        z: extract_value("Z:"),
     }
-
-    axes
 }
 
 /**
@@ -274,20 +282,19 @@ mod tests {
     #[test]
     fn test_m20_parser() {
         let sample_response =
-            "Begin file list\nfile1.gcode\nfile2.gcode\nsubdir/file3.gcode\nEnd file list"
-                .to_string();
+            "Begin file list\nfile1.GCO\nfile2.GCO\nsubdir/file3.GCO\nEnd file list".to_string();
         let files = m20(sample_response);
         assert_eq!(files.len(), 3);
-        assert!(files.contains(&"file1.gcode".to_string()));
-        assert!(files.contains(&"file2.gcode".to_string()));
-        assert!(files.contains(&"subdir/file3.gcode".to_string()));
+        assert!(files.contains(&"file1.GCO".to_string()));
+        assert!(files.contains(&"file2.GCO".to_string()));
+        assert!(files.contains(&"subdir/file3.GCO".to_string()));
     }
 
     #[test]
     fn test_m33_parser() {
-        let sample_response = "Path: /test/long/path/file.gcode\nok".to_string();
+        let sample_response = "Path: /test/long/path/file.GCO\nok".to_string();
         let file_path = m33(sample_response);
-        assert_eq!(file_path, "/test/long/path/file.gcode");
+        assert_eq!(file_path, "/test/long/path/file.GCO");
     }
 
     #[test]
@@ -303,11 +310,12 @@ mod tests {
 
     #[test]
     fn test_m114_parser() {
-        let sample_response = "X:10 Y:20 Z:30 E:0 Count X:10 Y:20 Z:30".to_string();
+        let sample_response =
+            "echo:busy:X:149.20 Y:120.90 Z:11.11 E:0.00 Count X:11936 Y:9672 Z:4444".to_string();
         let axes = m114(sample_response);
-        assert_eq!(axes.x, 10);
-        assert_eq!(axes.y, 20);
-        assert_eq!(axes.z, 30);
+        assert_eq!(axes.x, 149.20);
+        assert_eq!(axes.y, 120.90);
+        assert_eq!(axes.z, 11.11);
     }
 
     #[test]
@@ -368,6 +376,28 @@ mod tests {
         let sample_response = "SD printing byte 0/1798968 ok".to_string();
         let status = m27(sample_response);
         assert_eq!(status, "0.0");
+    }
+
+    #[test]
+    fn test_m27_current_file() {
+        let sample_response = "Current file: test_file.gcode ok".to_string();
+        let status = m27(sample_response);
+        assert_eq!(status, "test_file.gcode");
+    }
+
+    #[test]
+    fn test_m27_current_file_with_path() {
+        let sample_response = "Current file: /subfolder/test_file.gcode ok".to_string();
+        let status = m27(sample_response);
+        assert_eq!(status, "/subfolder/test_file.gcode");
+    }
+
+    #[test]
+    fn test_m27_complex_filename() {
+        let sample_response =
+            "Current file: BATTER~1.GCO Batterie Removel Tool 50mm.gcode ok".to_string();
+        let status = m27(sample_response);
+        assert_eq!(status, "BATTER~1.GCO");
     }
 
     #[test]

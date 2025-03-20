@@ -59,9 +59,9 @@ pub struct PrinterInfo {
 */
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AxePositions {
-    pub x: i8,
-    pub y: i8,
-    pub z: i8,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
 }
 
 /// M105 - Get Extruder Temperature
