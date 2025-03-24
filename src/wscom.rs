@@ -142,6 +142,12 @@ async fn handle_connection(
                                                             "Failed to serialize message into JSON",
                                                         )
                                                     }
+                                                    "M27 C" => {
+                                                        let response = m27(response);
+                                                        serde_json::to_string(&response).expect(
+                                                            "Failed to serialize message into JSON",
+                                                        )
+                                                    }
                                                     "M31" => {
                                                         let response = m31(response);
                                                         serde_json::to_string(&response).expect(
