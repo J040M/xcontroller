@@ -13,3 +13,4 @@ services:
       - "/dev/ttyUSB0:/dev/ttyUSB0"
     ports:
       - "9002:9002"
+      - "80:80"
