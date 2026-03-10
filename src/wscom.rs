@@ -34,7 +34,7 @@ pub async fn accept_connection(
     match handle_connection(peer, stream, configuration).await {
         Ok(_) => Ok(()),
         Err(e) => match e {
-            Error::ConnectionClosed | Error::Protocol(_) | Error::Utf8 => Ok(()),
+            Error::ConnectionClosed | Error::Protocol(_) | Error::Utf8(_) => Ok(()),
             err => {
                 error!("Error processing connection: {}", err);
                 Err(err)
@@ -74,7 +74,7 @@ async fn handle_connection(
     ) -> Result<()> {
         let json_str =
             serde_json::to_string(&message).expect("Failed to serialize message into JSON");
-        let resp_message = Message::Text(json_str);
+        let resp_message = Message::Text(json_str.into());
 
         if let Err(e) = ws_write.send(resp_message).await {
             error!("{:?}", e)
