@@ -1,7 +1,7 @@
 // This solution might need some more parcing and validation
 // Validating the cmd to the printer data to avoid problematic commands
 
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 
 pub fn g_command(cmd: &str) -> Result<&str, Error> {
     let command = cmd.split_whitespace().next().unwrap();
@@ -47,6 +47,6 @@ pub fn g_command(cmd: &str) -> Result<&str, Error> {
         | "H8" | "H09" | "H9" | "D00" | "D0" | "D01" | "D1" | "D02" | "D2" | "D03" | "D3"
         | "D04" | "D4" | "D05" | "D5" | "D06" | "D6" | "D07" | "D7" | "D08" | "D8" | "D09"
         | "D9" => Ok(cmd),
-        _ => Err(Error::new(ErrorKind::Other, "Invalid command")),
+        _ => Err(Error::other("Invalid command")),
     }
 }
