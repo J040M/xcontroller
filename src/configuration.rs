@@ -1,5 +1,9 @@
 use crate::structs::Config;
 use log::warn;
+use std::env;
+
+const DEFAULT_BIND_ADDR: &str = "127.0.0.1";
+const DEFAULT_MAX_CLIENTS: usize = 8;
 
 pub fn get_configuration(args: Vec<String>) -> Config {
     // Set defaults in case arguments are not provided
@@ -8,6 +12,9 @@ pub fn get_configuration(args: Vec<String>) -> Config {
         serial_port: "/dev/ttyUSB0".to_string(),
         baud_rate: 115200,
         ws_port: "9002".to_string(),
+        bind_addr: DEFAULT_BIND_ADDR.to_string(),
+        auth_token: None,
+        max_clients: DEFAULT_MAX_CLIENTS,
     };
 
     if args.len() > 4 {
@@ -16,18 +23,47 @@ pub fn get_configuration(args: Vec<String>) -> Config {
         let baudrate = args[3].clone();
         let test_arg = args[4].clone();
 
-        configuration = Config {
-            test_mode: matches!(test_arg.to_lowercase().as_str(), "true"),
-            baud_rate: match baudrate.parse::<u32>() {
-                Ok(br) => br,
-                Err(_) => {
-                    warn!("Failed to parse baudrate. Using default baudrate 115200");
-                    115200
-                }
-            },
-            serial_port,
-            ws_port,
+        configuration.ws_port = ws_port;
+        configuration.serial_port = serial_port;
+        configuration.test_mode = matches!(test_arg.to_lowercase().as_str(), "true");
+        configuration.baud_rate = match baudrate.parse::<u32>() {
+            Ok(br) => br,
+            Err(_) => {
+                warn!("Failed to parse baudrate. Using default baudrate 115200");
+                115200
+            }
         };
+    }
+
+    // Security/networking knobs come from env vars so existing positional
+    // CLI invocations and the systemd unit don't need to change.
+    if let Ok(addr) = env::var("XCONTROLLER_BIND_ADDR") {
+        configuration.bind_addr = addr;
+    }
+    if let Ok(token) = env::var("XCONTROLLER_AUTH_TOKEN") {
+        if !token.is_empty() {
+            configuration.auth_token = Some(token);
+        }
+    }
+    if let Ok(max) = env::var("XCONTROLLER_MAX_CLIENTS") {
+        match max.parse::<usize>() {
+            Ok(n) if n > 0 => configuration.max_clients = n,
+            _ => warn!(
+                "Invalid XCONTROLLER_MAX_CLIENTS={}, using default {}",
+                max, DEFAULT_MAX_CLIENTS
+            ),
+        }
+    }
+
+    if configuration.bind_addr != "127.0.0.1"
+        && configuration.bind_addr != "localhost"
+        && configuration.auth_token.is_none()
+    {
+        warn!(
+            "Listening on non-loopback address {} without XCONTROLLER_AUTH_TOKEN set; \
+             any host on the network can drive the printer.",
+            configuration.bind_addr
+        );
     }
 
     configuration
@@ -37,19 +73,39 @@ pub fn get_configuration(args: Vec<String>) -> Config {
 mod tests {
     use super::*;
 
+    // Env vars are process-global; gate test access behind a mutex so
+    // parallel `cargo test` runs don't see each other's mutations.
+    use std::sync::Mutex;
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn clear_env() {
+        env::remove_var("XCONTROLLER_BIND_ADDR");
+        env::remove_var("XCONTROLLER_AUTH_TOKEN");
+        env::remove_var("XCONTROLLER_MAX_CLIENTS");
+    }
+
     #[test]
     fn test_get_configuration_defaults() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_env();
+
         let args: Vec<String> = vec![];
         let config = get_configuration(args);
 
-        assert_eq!(config.test_mode, false);
+        assert!(!config.test_mode);
         assert_eq!(config.serial_port, "/dev/ttyUSB0");
         assert_eq!(config.baud_rate, 115200);
         assert_eq!(config.ws_port, "9002");
+        assert_eq!(config.bind_addr, "127.0.0.1");
+        assert!(config.auth_token.is_none());
+        assert_eq!(config.max_clients, DEFAULT_MAX_CLIENTS);
     }
 
     #[test]
     fn test_get_configuration_with_args() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_env();
+
         let args: Vec<String> = vec![
             "program_name".to_string(),
             "8080".to_string(),
@@ -59,7 +115,7 @@ mod tests {
         ];
         let config = get_configuration(args);
 
-        assert_eq!(config.test_mode, true);
+        assert!(config.test_mode);
         assert_eq!(config.serial_port, "/dev/ttyS0");
         assert_eq!(config.baud_rate, 9600);
         assert_eq!(config.ws_port, "8080");
@@ -67,6 +123,9 @@ mod tests {
 
     #[test]
     fn test_get_configuration_invalid_baudrate() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_env();
+
         let args: Vec<String> = vec![
             "program_name".to_string(),
             "8080".to_string(),
@@ -76,9 +135,39 @@ mod tests {
         ];
         let config = get_configuration(args);
 
-        assert_eq!(config.test_mode, false);
+        assert!(!config.test_mode);
         assert_eq!(config.serial_port, "/dev/ttyS0");
         assert_eq!(config.baud_rate, 115200); // Default baud rate
         assert_eq!(config.ws_port, "8080");
+    }
+
+    #[test]
+    fn test_env_overrides() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_env();
+        env::set_var("XCONTROLLER_BIND_ADDR", "0.0.0.0");
+        env::set_var("XCONTROLLER_AUTH_TOKEN", "s3cret");
+        env::set_var("XCONTROLLER_MAX_CLIENTS", "16");
+
+        let config = get_configuration(vec![]);
+
+        assert_eq!(config.bind_addr, "0.0.0.0");
+        assert_eq!(config.auth_token.as_deref(), Some("s3cret"));
+        assert_eq!(config.max_clients, 16);
+
+        clear_env();
+    }
+
+    #[test]
+    fn test_empty_token_treated_as_unset() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_env();
+        env::set_var("XCONTROLLER_AUTH_TOKEN", "");
+
+        let config = get_configuration(vec![]);
+
+        assert!(config.auth_token.is_none());
+
+        clear_env();
     }
 }

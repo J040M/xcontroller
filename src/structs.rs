@@ -86,6 +86,9 @@ pub struct Config {
     pub serial_port: String,
     pub baud_rate: u32,
     pub ws_port: String,
+    pub bind_addr: String,
+    pub auth_token: Option<String>,
+    pub max_clients: usize,
 }
 
 // Used for sending messages back to clients
