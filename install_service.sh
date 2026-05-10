@@ -1,98 +1,102 @@
 #!/bin/bash
+set -euo pipefail
 
 # Variables
-GITHUB_RELEASE_URL="https://github.com/J040M/xcontroller/releases/latest/download/xcontroller"        # GitHub release URL (you'll pass this as an argument)
-BIN_PATH="/usr/local/"  # Path where the binary is installed
-SERVICE_NAME="xcontroller" # The name of the systemd service (e.g. "my_service")
-SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"  # Path to the systemd service file
-TEMP_DIR="/tmp/xcontroller"  # Temporary directory for downloading the binary
+GITHUB_RELEASE_URL="https://github.com/J040M/xcontroller/releases/latest/download/xcontroller"
+SERVICE_NAME="xcontroller"
+BIN_PATH="/usr/local/bin/${SERVICE_NAME}"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+TEMP_DIR="$(mktemp -d -t "${SERVICE_NAME}.XXXXXX")"
+SERVICE_USER="${SERVICE_NAME}"
+SERVICE_GROUP="dialout"
+
+trap 'rm -rf "${TEMP_DIR}"' EXIT
 
 # Parameters for the binary
-WEBSOCKET_PORT=$1
-SERIAL_PORT=$2
-BAUDRATE=$3
-TEST_MODE=$4
+WEBSOCKET_PORT="${1:-}"
+SERIAL_PORT="${2:-}"
+BAUDRATE="${3:-}"
+TEST_MODE="${4:-}"
 
 # Check if required parameters are provided
-if [ -z "$WEBSOCKET_PORT" ] || [ -z "$SERIAL_PORT" ] || [ -z "$BAUDRATE" ] || [ -z "$TEST_MODE" ]; then
+if [ -z "${WEBSOCKET_PORT}" ] || [ -z "${SERIAL_PORT}" ] || [ -z "${BAUDRATE}" ] || [ -z "${TEST_MODE}" ]; then
   echo "Error: Missing required parameters."
-  echo "Usage: ./install_service.sh <websocket_port_value> <serial_port_string> <baudrate_value> <test_mode_boolean>"
+  echo "Usage: ./install_service.sh <websocket_port> <serial_port> <baudrate> <test_mode>"
   exit 1
 fi
 
-# 1. Check if the service is already running and stop it
-if systemctl is-active --quiet $SERVICE_NAME; then
+# 1. Stop the service if it's already running
+if systemctl is-active --quiet "${SERVICE_NAME}"; then
   echo "Stopping the service..."
-  sudo systemctl stop $SERVICE_NAME
-  if [ $? -ne 0 ]; then
-    echo "Error: Failed to stop service $SERVICE_NAME"
-    exit 1
-  fi
-else
-  echo "Service $SERVICE_NAME is not running, skipping stop."
+  sudo systemctl stop "${SERVICE_NAME}"
 fi
 
 # 2. Download the binary from GitHub release URL
-echo "Downloading the binary from $GITHUB_RELEASE_URL..."
-mkdir -p $TEMP_DIR
-curl -L -o "$TEMP_DIR/$SERVICE_NAME" $GITHUB_RELEASE_URL
-if [ $? -ne 0 ]; then
-  echo "Error: Failed to download the binary"
-  exit 1
+echo "Downloading the binary from ${GITHUB_RELEASE_URL}..."
+curl -fL --retry 3 -o "${TEMP_DIR}/${SERVICE_NAME}" "${GITHUB_RELEASE_URL}"
+
+# Print the SHA256 of the downloaded binary so the operator can spot-check
+# it against the release page before letting it run as a service.
+echo "Downloaded binary SHA256:"
+sha256sum "${TEMP_DIR}/${SERVICE_NAME}"
+
+# 3. Install the binary atomically with correct mode and ownership
+echo "Installing binary to ${BIN_PATH}..."
+sudo install -o root -g root -m 0755 "${TEMP_DIR}/${SERVICE_NAME}" "${BIN_PATH}"
+
+# 4. Create a dedicated unprivileged service user (in dialout for serial access)
+if ! id -u "${SERVICE_USER}" >/dev/null 2>&1; then
+  echo "Creating service user ${SERVICE_USER}..."
+  sudo useradd --system --shell /usr/sbin/nologin --no-create-home \
+    --groups "${SERVICE_GROUP}" "${SERVICE_USER}"
+else
+  echo "Service user ${SERVICE_USER} already exists; ensuring ${SERVICE_GROUP} membership..."
+  sudo usermod -aG "${SERVICE_GROUP}" "${SERVICE_USER}"
 fi
 
-# 3. Install/Update the binary
-echo "Installing/updating the binary..."
-sudo mv "$TEMP_DIR/$SERVICE_NAME" $BIN_PATH
-sudo chmod +x $BIN_PATH
-if [ $? -ne 0 ]; then
-  echo "Error: Failed to install/update the binary"
-  exit 1
-fi
-
-# 4. Install or Update the service
-echo "Ensuring the service is installed/updated..."
-
-if [ ! -f $SERVICE_FILE ]; then
-  echo "Service file not found. Installing the service..."
-  
-  # Create the systemd service file
-  cat > $SERVICE_FILE <<EOL
+# 5. Write the systemd unit
+echo "Writing systemd unit ${SERVICE_FILE}..."
+sudo tee "${SERVICE_FILE}" >/dev/null <<EOL
 [Unit]
-Description=xcontroller
+Description=xcontroller 3D printer controller
 After=network.target
 
 [Service]
-ExecStart=$BIN_PATH/$SERVICE_NAME -- $WEBSOCKET_PORT $SERIAL_PORT $BAUDRATE $TEST_MODE
+Type=simple
+User=${SERVICE_USER}
+Group=${SERVICE_GROUP}
+ExecStart=${BIN_PATH} ${WEBSOCKET_PORT} ${SERIAL_PORT} ${BAUDRATE} ${TEST_MODE}
+EnvironmentFile=-/etc/xcontroller/xcontroller.env
 Restart=always
-User=root  # Adjust this to the user you want the service to run as
-Group=root  # Optional, set if needed
-StandardOutput=journal  # Logs output to journal (default)
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
 EOL
-  sudo systemctl daemon-reload
-  sudo systemctl enable $SERVICE_NAME
-  echo "Service installed and enabled!"
-else
-  echo "Service file already exists, updating..."
-  sudo systemctl daemon-reload
-  echo "Service updated!"
-fi
 
-# 5. Start the service
-echo "Starting the service..."
-sudo systemctl start $SERVICE_NAME
-if [ $? -ne 0 ]; then
-  echo "Error: Failed to start service $SERVICE_NAME"
-  exit 1
-fi
+# 6. Reload, enable, start
+sudo systemctl daemon-reload
+sudo systemctl enable "${SERVICE_NAME}"
+sudo systemctl restart "${SERVICE_NAME}"
 
-# Cleanup
-echo "Cleaning up..."
-rm -rf $TEMP_DIR
-echo "Cleanup complete."
+cat <<EOF
 
-# Success message
-echo "Binary installation and service update completed successfully!"
+Installed.
+
+Optional: put security knobs in /etc/xcontroller/xcontroller.env (chmod 0600):
+  XCONTROLLER_BIND_ADDR=0.0.0.0
+  XCONTROLLER_AUTH_TOKEN=<a-long-random-string>
+  XCONTROLLER_MAX_CLIENTS=8
+
+Then: sudo systemctl restart ${SERVICE_NAME}
+
+Logs: journalctl -u ${SERVICE_NAME} -f
+EOF
