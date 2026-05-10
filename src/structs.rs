@@ -7,6 +7,10 @@ pub enum MessageType {
     SerialConfig,
     Unsafe,
     Terminal,
+    /// First message on a connection when XCONTROLLER_AUTH_TOKEN is set.
+    /// `message` carries the shared secret; the server replies with an
+    /// "Auth" MessageSender (`message: "ok"` on success, `"fail"` otherwise).
+    Auth,
 }
 
 /// Used for received messages

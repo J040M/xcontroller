@@ -1,5 +1,5 @@
 use futures::{stream::StreamExt, SinkExt};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use std::net::SocketAddr;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::TcpStream;
@@ -17,6 +17,22 @@ use crate::structs::MessageSender;
 use crate::Config;
 use crate::MessageType;
 use crate::MessageWS;
+
+fn now_ts() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn error_message(kind: &str, detail: &str) -> MessageSender {
+    MessageSender {
+        message_type: kind.to_string(),
+        message: detail.to_string(),
+        raw_message: detail.to_string(),
+        timestamp: now_ts(),
+    }
+}
 
 /**
  * Accept incoming connection from client
@@ -81,6 +97,45 @@ async fn handle_connection(
         }
 
         Ok(())
+    }
+
+    // Auth handshake: when an auth_token is configured, the very first
+    // message must be MessageType::Auth with the matching secret. The reply
+    // is an "Auth" MessageSender ("ok" or "fail") and on failure we drop
+    // the connection. When no token is configured this block is skipped.
+    if let Some(expected) = configuration.auth_token.as_deref() {
+        let first = match ws_read.next().await {
+            Some(Ok(m)) => m,
+            Some(Err(e)) => {
+                warn!("Auth read error from {}: {}", peer, e);
+                return Ok(());
+            }
+            None => {
+                info!("Client {} disconnected before auth", peer);
+                return Ok(());
+            }
+        };
+
+        let auth_ok = first
+            .to_text()
+            .ok()
+            .and_then(|t| serde_json::from_str::<MessageWS>(t).ok())
+            .map(|m| matches!(m.message_type, MessageType::Auth) && m.message == expected)
+            .unwrap_or(false);
+
+        let reply = MessageSender {
+            message_type: "Auth".to_string(),
+            message: if auth_ok { "ok".into() } else { "fail".into() },
+            raw_message: String::new(),
+            timestamp: now_ts(),
+        };
+        send_message_back(reply, &mut ws_write).await?;
+
+        if !auth_ok {
+            warn!("Auth failed for {}", peer);
+            return Ok(());
+        }
+        info!("Auth ok for {}", peer);
     }
 
     // Loop over received messages
@@ -204,8 +259,38 @@ async fn handle_connection(
                             // Not yet implemented, changes to the config loading is required
                             debug!("SerialConfig: {}", message.message);
                         }
+                        MessageType::Auth => {
+                            // Auth is only valid as the first message; ignore
+                            // (and don't echo the value) if a client re-sends.
+                            warn!("Unexpected Auth message from {} after handshake", peer);
+                            send_message_back(
+                                error_message(
+                                    "MessageSenderError",
+                                    "Auth not allowed after handshake",
+                                ),
+                                &mut ws_write,
+                            )
+                            .await?;
+                        }
                         MessageType::Terminal => {
-                            let cmd = message.message;
+                            // Validate against the same allow-list as GCommand —
+                            // Terminal used to bypass it entirely, which made the
+                            // whitelist meaningless.
+                            let cmd = match g_command(message.message) {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    warn!("Terminal rejected from {}: {}", peer, e);
+                                    send_message_back(
+                                        error_message(
+                                            "MessageSenderError",
+                                            "Invalid or disallowed command",
+                                        ),
+                                        &mut ws_write,
+                                    )
+                                    .await?;
+                                    continue;
+                                }
+                            };
                             match create_serialcom(
                                 cmd,
                                 configuration.serial_port.to_string(),
@@ -250,7 +335,23 @@ async fn handle_connection(
                             }
                         }
                         MessageType::Unsafe => {
-                            let cmd = message.message;
+                            // Same validation as Terminal/GCommand: do not let
+                            // a client send arbitrary text straight to Marlin.
+                            let cmd = match g_command(message.message) {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    warn!("Unsafe rejected from {}: {}", peer, e);
+                                    send_message_back(
+                                        error_message(
+                                            "MessageSenderError",
+                                            "Invalid or disallowed command",
+                                        ),
+                                        &mut ws_write,
+                                    )
+                                    .await?;
+                                    continue;
+                                }
+                            };
                             match create_serialcom(
                                 cmd,
                                 configuration.serial_port.to_string(),
@@ -296,7 +397,14 @@ async fn handle_connection(
                         }
                     }
                 }
-                Err(_) => todo!(),
+                Err(e) => {
+                    warn!("Bad JSON from {}: {}", peer, e);
+                    send_message_back(
+                        error_message("MessageSenderError", "Invalid JSON payload"),
+                        &mut ws_write,
+                    )
+                    .await?;
+                }
             }
         }
     }
