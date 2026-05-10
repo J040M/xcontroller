@@ -2,7 +2,7 @@ use log::{error, info, warn};
 use simplelog::*;
 use std::env;
 use std::fs::{self, File};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
@@ -15,6 +15,7 @@ mod structs;
 mod wscom;
 
 use crate::configuration::get_configuration;
+use crate::serialcom::SerialConnection;
 use crate::structs::{Config, MessageType, MessageWS};
 use crate::wscom::accept_connection;
 
@@ -43,13 +44,35 @@ async fn main() {
         if configuration.auth_token.is_some() { "enabled" } else { "disabled" },
     );
 
+    // Open the serial port once at startup. Sharing a single handle across
+    // connections avoids EBUSY when max_clients > 1 and is a prerequisite for
+    // any future SD-upload (M28/M29) which needs the port held open across
+    // many writes. Failing fast here is correct: a controller without a
+    // printer is useless, and systemd will retry until the device appears.
+    let serial = match SerialConnection::open(&configuration.serial_port, configuration.baud_rate) {
+        Ok(s) => {
+            info!(
+                "Serial port {} opened at {} baud",
+                configuration.serial_port, configuration.baud_rate
+            );
+            Arc::new(Mutex::new(s))
+        }
+        Err(e) => {
+            error!(
+                "Failed to open serial port {}: {}",
+                configuration.serial_port, e
+            );
+            std::process::exit(1);
+        }
+    };
+
     let listener = TcpListener::bind(&addr)
         .await
         .expect("TCP fail to open connection");
 
     let connection_limit = Arc::new(Semaphore::new(configuration.max_clients));
 
-    // Start serial connection and listen for incoming connections
+    // Listen for incoming connections
     while let Ok((stream, _)) = listener.accept().await {
         let peer = stream
             .peer_addr()
@@ -70,10 +93,13 @@ async fn main() {
         };
 
         let cloned_configuration = configuration.clone();
+        let cloned_serial = Arc::clone(&serial);
 
         tokio::spawn(async move {
             let _permit = permit;
-            if let Err(e) = accept_connection(peer, stream, cloned_configuration).await {
+            if let Err(e) =
+                accept_connection(peer, stream, cloned_configuration, cloned_serial).await
+            {
                 error!("Connection error from {}: {}", peer, e);
             }
         });

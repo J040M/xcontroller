@@ -1,6 +1,7 @@
 use futures::{stream::StreamExt, SinkExt};
 use log::{debug, error, info, warn};
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
@@ -10,13 +11,15 @@ use tokio_tungstenite::{
 use tungstenite::Message;
 
 use crate::commands::g_command;
-use crate::serialcom::create_serialcom;
+use crate::serialcom::SerialConnection;
 
 use crate::parser::{m105, m114, m115, m119, m20, m27, m31, m33};
 use crate::structs::MessageSender;
 use crate::Config;
 use crate::MessageType;
 use crate::MessageWS;
+
+type SharedSerial = Arc<Mutex<SerialConnection>>;
 
 fn now_ts() -> u64 {
     SystemTime::now()
@@ -46,8 +49,9 @@ pub async fn accept_connection(
     peer: SocketAddr,
     stream: TcpStream,
     configuration: Config,
+    serial: SharedSerial,
 ) -> Result<(), Error> {
-    match handle_connection(peer, stream, configuration).await {
+    match handle_connection(peer, stream, configuration, serial).await {
         Ok(_) => Ok(()),
         Err(e) => match e {
             Error::ConnectionClosed | Error::Protocol(_) | Error::Utf8 => Ok(()),
@@ -71,6 +75,7 @@ async fn handle_connection(
     peer: SocketAddr,
     stream: TcpStream,
     configuration: Config,
+    serial: SharedSerial,
 ) -> Result<(), Error> {
     let ws_stream = accept_async(stream)
         .await
@@ -161,12 +166,15 @@ async fn handle_connection(
                             let result = g_command(message.message);
                             match result {
                                 Ok(cmd) => {
-                                    match create_serialcom(
-                                        cmd,
-                                        configuration.serial_port.to_string(),
-                                        configuration.baud_rate,
-                                    ) {
-                                        Ok(response) => {
+                                    let serial_clone = Arc::clone(&serial);
+                                    let cmd_owned = cmd.to_string();
+                                    let join_result = tokio::task::spawn_blocking(move || {
+                                        serial_clone.lock().unwrap().send_command(&cmd_owned)
+                                    })
+                                    .await;
+
+                                    match join_result {
+                                        Ok(Ok(response)) => {
                                             debug!("{:?}", response);
 
                                             // Set timestamp
@@ -245,8 +253,14 @@ async fn handle_connection(
                                             send_message_back(message_sender, &mut ws_write)
                                                 .await?;
                                         }
-                                        Err(e) => {
-                                            error!("{:?}", e)
+                                        Ok(Err(io_err)) => {
+                                            error!("Serial IO error: {}", io_err);
+                                        }
+                                        Err(join_err) => {
+                                            error!(
+                                                "Serial blocking task failed: {}",
+                                                join_err
+                                            );
                                         }
                                     }
                                 }
@@ -291,12 +305,15 @@ async fn handle_connection(
                                     continue;
                                 }
                             };
-                            match create_serialcom(
-                                cmd,
-                                configuration.serial_port.to_string(),
-                                configuration.baud_rate,
-                            ) {
-                                Ok(response) => {
+                            let serial_clone = Arc::clone(&serial);
+                            let cmd_owned = cmd.to_string();
+                            let join_result = tokio::task::spawn_blocking(move || {
+                                serial_clone.lock().unwrap().send_command(&cmd_owned)
+                            })
+                            .await;
+
+                            match join_result {
+                                Ok(Ok(response)) => {
                                     debug!("{:?}", response);
 
                                     // Get timestamp
@@ -307,30 +324,34 @@ async fn handle_connection(
 
                                     let message_sender = MessageSender {
                                         message_type: "terminal".to_string(),
-                                        message: response.to_string().clone(),
+                                        message: response.clone(),
                                         raw_message: response,
                                         timestamp,
                                     };
 
                                     send_message_back(message_sender, &mut ws_write).await?;
                                 }
-                                Err(e) => {
-                                    error!("{:?}", e);
-
-                                    let since_epoch = now
-                                        .duration_since(UNIX_EPOCH)
-                                        .expect("Time went backwards");
-                                    let timestamp = since_epoch.as_secs();
-
-                                    // Define response message
-                                    let message_sender = MessageSender {
-                                        message_type: "MessageSenderError".to_string(),
-                                        message: "Error executing command".to_string(),
-                                        raw_message: "Error executing command".to_string(),
-                                        timestamp,
-                                    };
-
-                                    send_message_back(message_sender, &mut ws_write).await?;
+                                Ok(Err(io_err)) => {
+                                    error!("Serial IO error: {}", io_err);
+                                    send_message_back(
+                                        error_message(
+                                            "MessageSenderError",
+                                            "Error executing command",
+                                        ),
+                                        &mut ws_write,
+                                    )
+                                    .await?;
+                                }
+                                Err(join_err) => {
+                                    error!("Serial blocking task failed: {}", join_err);
+                                    send_message_back(
+                                        error_message(
+                                            "MessageSenderError",
+                                            "Error executing command",
+                                        ),
+                                        &mut ws_write,
+                                    )
+                                    .await?;
                                 }
                             }
                         }
@@ -352,12 +373,15 @@ async fn handle_connection(
                                     continue;
                                 }
                             };
-                            match create_serialcom(
-                                cmd,
-                                configuration.serial_port.to_string(),
-                                configuration.baud_rate,
-                            ) {
-                                Ok(response) => {
+                            let serial_clone = Arc::clone(&serial);
+                            let cmd_owned = cmd.to_string();
+                            let join_result = tokio::task::spawn_blocking(move || {
+                                serial_clone.lock().unwrap().send_command(&cmd_owned)
+                            })
+                            .await;
+
+                            match join_result {
+                                Ok(Ok(response)) => {
                                     debug!("{:?}", response);
 
                                     // Get timestamp
@@ -368,30 +392,34 @@ async fn handle_connection(
 
                                     let message_sender = MessageSender {
                                         message_type: "Unsafe".to_string(),
-                                        message: response.to_string().clone(),
+                                        message: response.clone(),
                                         raw_message: response,
                                         timestamp,
                                     };
 
                                     send_message_back(message_sender, &mut ws_write).await?;
                                 }
-                                Err(e) => {
-                                    error!("{:?}", e);
-
-                                    let since_epoch = now
-                                        .duration_since(UNIX_EPOCH)
-                                        .expect("Time went backwards");
-                                    let timestamp = since_epoch.as_secs();
-
-                                    // Define response message
-                                    let message_sender = MessageSender {
-                                        message_type: "MessageSenderError".to_string(),
-                                        message: "Error executing command".to_string(),
-                                        raw_message: "Error executing command".to_string(),
-                                        timestamp,
-                                    };
-
-                                    send_message_back(message_sender, &mut ws_write).await?;
+                                Ok(Err(io_err)) => {
+                                    error!("Serial IO error: {}", io_err);
+                                    send_message_back(
+                                        error_message(
+                                            "MessageSenderError",
+                                            "Error executing command",
+                                        ),
+                                        &mut ws_write,
+                                    )
+                                    .await?;
+                                }
+                                Err(join_err) => {
+                                    error!("Serial blocking task failed: {}", join_err);
+                                    send_message_back(
+                                        error_message(
+                                            "MessageSenderError",
+                                            "Error executing command",
+                                        ),
+                                        &mut ws_write,
+                                    )
+                                    .await?;
                                 }
                             }
                         }
