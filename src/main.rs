@@ -1,9 +1,11 @@
-use log::{error, info};
+use log::{error, info, warn};
 use simplelog::*;
 use std::env;
 use std::fs::{self, File};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 
 mod commands;
 mod configuration;
@@ -26,14 +28,26 @@ async fn main() {
     let args: Vec<String> = env::args().collect();
     let configuration = get_configuration(args);
 
-    let addr = format!("0.0.0.0:{}", configuration.ws_port);
+    let addr = format!("{}:{}", configuration.bind_addr, configuration.ws_port);
 
     info!("Listening on {}", addr);
-    info!("Running with config: {:?}", configuration);
+    // Don't dump auth_token into logs — Debug-print a sanitized view.
+    info!(
+        "Running with config: serial_port={} baud_rate={} ws_port={} bind_addr={} max_clients={} test_mode={} auth={}",
+        configuration.serial_port,
+        configuration.baud_rate,
+        configuration.ws_port,
+        configuration.bind_addr,
+        configuration.max_clients,
+        configuration.test_mode,
+        if configuration.auth_token.is_some() { "enabled" } else { "disabled" },
+    );
 
     let listener = TcpListener::bind(&addr)
         .await
         .expect("TCP fail to open connection");
+
+    let connection_limit = Arc::new(Semaphore::new(configuration.max_clients));
 
     // Start serial connection and listen for incoming connections
     while let Ok((stream, _)) = listener.accept().await {
@@ -41,10 +55,24 @@ async fn main() {
             .peer_addr()
             .expect("Connected peers should have an address");
 
+        // Cap concurrent clients. try_acquire avoids backing the accept loop
+        // up if a connection burst arrives — we'd rather refuse fast.
+        let permit = match connection_limit.clone().try_acquire_owned() {
+            Ok(p) => p,
+            Err(_) => {
+                warn!(
+                    "Refusing connection from {}: max_clients={} reached",
+                    peer, configuration.max_clients
+                );
+                drop(stream);
+                continue;
+            }
+        };
+
         let cloned_configuration = configuration.clone();
 
-        // Spawn a new thread for each connection for async handling
         tokio::spawn(async move {
+            let _permit = permit;
             if let Err(e) = accept_connection(peer, stream, cloned_configuration).await {
                 error!("Connection error from {}: {}", peer, e);
             }
