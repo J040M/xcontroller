@@ -4,7 +4,10 @@
 use std::io::{Error, ErrorKind};
 
 pub fn g_command(cmd: &str) -> Result<&str, Error> {
-    let command = cmd.split_whitespace().next().unwrap();
+    let command = match cmd.split_whitespace().next() {
+        Some(c) => c,
+        None => return Err(Error::new(ErrorKind::InvalidInput, "Empty command")),
+    };
 
     match command {
         "G00" | "G01" | "G1" | "G02" | "G2" | "G03" | "G3" | "G04" | "G4" | "G05" | "G5"
@@ -36,7 +39,9 @@ pub fn g_command(cmd: &str) -> Result<&str, Error> {
         | "M861" | "M862" | "M863" | "M864" | "M865" | "M866" | "M867" | "M868" | "M869"
         | "M871" | "M876" | "M900" | "M906" | "M907" | "M908" | "M909" | "M910" | "M911"
         | "M912" | "M913" | "M914" | "M915" | "M916" | "M917" | "M918" | "M919" | "M928"
-        | "M951" | "M993" | "M994" | "M995" | "M997" | "M999" | "M7219" | "T00" | "T0" | "T01"
+        // M997 (firmware flash) intentionally NOT in this list — too easy to brick
+        // a printer remotely. Re-add only behind a deliberate flag if you need it.
+        | "M951" | "M993" | "M994" | "M995" | "M999" | "M7219" | "T00" | "T0" | "T01"
         | "T1" | "T02" | "T2" | "T03" | "T3" | "T04" | "T4" | "T05" | "T5" | "T06" | "T6"
         | "T07" | "T7" | "T08" | "T8" | "T09" | "T9" | "T?" | "Tc" | "Tx" | "S00" | "S0"
         | "S01" | "S1" | "S02" | "S2" | "S03" | "S3" | "S04" | "S4" | "S05" | "S5" | "S06"
@@ -47,6 +52,46 @@ pub fn g_command(cmd: &str) -> Result<&str, Error> {
         | "H8" | "H09" | "H9" | "D00" | "D0" | "D01" | "D1" | "D02" | "D2" | "D03" | "D3"
         | "D04" | "D4" | "D05" | "D5" | "D06" | "D6" | "D07" | "D7" | "D08" | "D8" | "D09"
         | "D9" => Ok(cmd),
-        _ => Err(Error::new(ErrorKind::Other, "Invalid command")),
+        _ => Err(Error::other("Invalid command")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn allows_basic_motion() {
+        assert!(g_command("G1 X10 Y20 F1500").is_ok());
+        assert!(g_command("G28").is_ok());
+        assert!(g_command("M105").is_ok());
+    }
+
+    #[test]
+    fn preserves_full_command_string() {
+        assert_eq!(g_command("M104 S200").unwrap(), "M104 S200");
+    }
+
+    #[test]
+    fn rejects_unknown_command() {
+        assert!(g_command("FOO").is_err());
+        assert!(g_command("G99999").is_err());
+    }
+
+    #[test]
+    fn rejects_empty_input() {
+        let err = g_command("").unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidInput);
+
+        let err = g_command("   \t  ").unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn m997_firmware_flash_is_blocked() {
+        // Regression: M997 lets a host trigger a firmware update from SD,
+        // which can brick the printer. It must stay out of the allow-list.
+        assert!(g_command("M997").is_err());
+        assert!(g_command("M997 S0").is_err());
     }
 }
