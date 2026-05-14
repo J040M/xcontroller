@@ -29,6 +29,11 @@ use crate::MessageWS;
 type SharedSerial = Arc<Mutex<SerialConnection>>;
 pub type UploadInFlight = Arc<AtomicBool>;
 
+/// Max wait for the next binary frame while collecting an upload payload.
+/// A stalled client must not hold the process-global `upload_in_flight`
+/// flag (and thus block every other upload) indefinitely.
+const UPLOAD_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// RAII guard that clears the upload-in-flight flag on drop. Constructed
 /// only after a successful `compare_exchange(false, true)` so it has
 /// exclusive ownership of the flag for its lifetime. Using a guard
@@ -103,6 +108,18 @@ fn resolve_compression(requested: Option<&str>) -> std::result::Result<Compressi
             }
         }
         other => Err(format!("unknown compression mode: {}", other)),
+    }
+}
+
+/// Stable string token for a `Compression` value, used in the `UploadDone`
+/// payload instead of debug-formatting the enum. All variants exist
+/// regardless of the `heatshrink` feature — that feature only gates whether
+/// `resolve_compression` will *accept* a request for them.
+fn compression_label(c: &Compression) -> &'static str {
+    match c {
+        Compression::None => "none",
+        Compression::Heatshrink { .. } => "heatshrink",
+        Compression::Auto => "auto",
     }
 }
 
@@ -328,10 +345,7 @@ async fn handle_connection(
                                             error!("Serial IO error: {}", io_err);
                                         }
                                         Err(join_err) => {
-                                            error!(
-                                                "Serial blocking task failed: {}",
-                                                join_err
-                                            );
+                                            error!("Serial blocking task failed: {}", join_err);
                                         }
                                     }
                                 }
@@ -549,12 +563,7 @@ async fn handle_connection(
                             // would just block on each other, so reject fast
                             // with a clear error instead.
                             if upload_in_flight
-                                .compare_exchange(
-                                    false,
-                                    true,
-                                    Ordering::SeqCst,
-                                    Ordering::SeqCst,
-                                )
+                                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
                                 .is_err()
                             {
                                 send_message_back(
@@ -587,18 +596,45 @@ async fn handle_connection(
                             .await?;
 
                             // Collect binary frames until we've received `size` bytes.
+                            // The idle deadline only advances on actual payload
+                            // frames, so a client that sends nothing but
+                            // ping/pong keep-alives still gets timed out and
+                            // can't pin the single-flight slot indefinitely.
                             let mut buf: Vec<u8> = Vec::with_capacity(req.size as usize);
                             let mut aborted = false;
+                            let mut idle_deadline =
+                                tokio::time::Instant::now() + UPLOAD_IDLE_TIMEOUT;
                             while (buf.len() as u64) < req.size {
-                                let frame = match ws_read.next().await {
-                                    Some(Ok(m)) => m,
-                                    Some(Err(e)) => {
+                                let frame = match tokio::time::timeout_at(
+                                    idle_deadline,
+                                    ws_read.next(),
+                                )
+                                .await
+                                {
+                                    Ok(Some(Ok(m))) => m,
+                                    Ok(Some(Err(e))) => {
                                         warn!("WS read error during upload payload: {}", e);
                                         aborted = true;
                                         break;
                                     }
-                                    None => {
+                                    Ok(None) => {
                                         warn!("Connection closed mid-upload");
+                                        aborted = true;
+                                        break;
+                                    }
+                                    Err(_elapsed) => {
+                                        warn!(
+                                            "Upload payload stalled (no data for {:?}) from {}, aborting",
+                                            UPLOAD_IDLE_TIMEOUT, peer
+                                        );
+                                        send_message_back(
+                                            error_message(
+                                                "UploadError",
+                                                "upload timed out waiting for payload data",
+                                            ),
+                                            &mut ws_write,
+                                        )
+                                        .await?;
                                         aborted = true;
                                         break;
                                     }
@@ -608,6 +644,9 @@ async fn handle_connection(
                                     break;
                                 }
                                 if frame.is_ping() || frame.is_pong() {
+                                    // Keep-alive traffic deliberately does not
+                                    // refresh `idle_deadline` — only real
+                                    // payload progress does.
                                     continue;
                                 }
                                 if !frame.is_binary() {
@@ -637,6 +676,7 @@ async fn handle_connection(
                                     break;
                                 }
                                 buf.extend_from_slice(&data);
+                                idle_deadline = tokio::time::Instant::now() + UPLOAD_IDLE_TIMEOUT;
                             }
                             if aborted {
                                 continue;
@@ -723,7 +763,8 @@ async fn handle_connection(
                                         source_bytes: stats.source_bytes,
                                         bytes_sent: stats.bytes_sent,
                                         chunks_sent: stats.chunks_sent,
-                                        compression: format!("{:?}", stats.compression),
+                                        compression: compression_label(&stats.compression)
+                                            .to_string(),
                                     };
                                     let body = serde_json::to_string(&result_payload)
                                         .unwrap_or_else(|_| String::from("{}"));
@@ -840,5 +881,20 @@ mod tests {
     fn resolve_compression_heatshrink_modes_without_feature() {
         assert!(resolve_compression(Some("heatshrink")).is_err());
         assert!(resolve_compression(Some("auto")).is_err());
+    }
+
+    #[test]
+    fn compression_label_maps_every_variant() {
+        // The `Compression` variants exist regardless of the `heatshrink`
+        // feature, so the label mapping is exercised on both feature sets.
+        assert_eq!(compression_label(&Compression::None), "none");
+        assert_eq!(
+            compression_label(&Compression::Heatshrink {
+                window: 8,
+                lookahead: 4
+            }),
+            "heatshrink"
+        );
+        assert_eq!(compression_label(&Compression::Auto), "auto");
     }
 }

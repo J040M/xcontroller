@@ -20,4 +20,4 @@ futures = "0.3"
 regex = "1.5.4"
 log = "0.4.21"
 simplelog = "0.12.2"
-marlin-binary-transfer = { path = "../marlin-binary-transfer", default-features = false, features = ["blocking", "serial"] }
+marlin-binary-transfer = { version = "0.1.2", default-features = false, features = ["blocking", "serial"] }

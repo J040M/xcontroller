@@ -95,6 +95,7 @@ Optional: put security knobs in /etc/xcontroller/xcontroller.env (chmod 0600):
   XCONTROLLER_BIND_ADDR=0.0.0.0
   XCONTROLLER_AUTH_TOKEN=<a-long-random-string>
   XCONTROLLER_MAX_CLIENTS=8
+  XCONTROLLER_MAX_UPLOAD_BYTES=67108864
 
 Then: sudo systemctl restart ${SERVICE_NAME}
 

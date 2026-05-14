@@ -525,7 +525,9 @@ dependencies = [
 
 [[package]]
 name = "marlin-binary-transfer"
-version = "0.1.1"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c17ee8d46d76077e876265e470a6f8b37434e2b7de0c49853b2b2224ebd8159d"
 dependencies = [
  "embedded-heatshrink",
  "pkg-config",

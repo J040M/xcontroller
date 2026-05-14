@@ -10,6 +10,11 @@
 
 ```cargo build --release```
 
+To enable `heatshrink`/`auto` compression for binary SD-card uploads, build
+with the optional feature:
+
+```cargo build --release --features heatshrink```
+
 2. Run the application — Development
 
 Defaults only:
@@ -41,6 +46,7 @@ Config {
     bind_addr: "127.0.0.1",
     auth_token: None,
     max_clients: 8,
+    max_upload_bytes: 67108864,
 }
 ```
 
@@ -54,6 +60,7 @@ positional CLI stays unchanged:
 | `XCONTROLLER_BIND_ADDR` | `127.0.0.1` | Listen address. Set to `0.0.0.0` for LAN access. The daemon logs a warning if you bind to a non-loopback address without setting `XCONTROLLER_AUTH_TOKEN`. |
 | `XCONTROLLER_AUTH_TOKEN` | unset | Shared secret enabling the auth handshake (see below). Empty string is treated as unset. |
 | `XCONTROLLER_MAX_CLIENTS` | `8` | Maximum concurrent WebSocket clients. Extra connections are refused at accept time. |
+| `XCONTROLLER_MAX_UPLOAD_BYTES` | `67108864` (64 MiB) | Maximum accepted binary upload payload. `UploadBegin` requests larger than this are rejected. See [`docs/upload.md`](docs/upload.md). |
 
 ### Authentication
 
@@ -125,6 +132,14 @@ Per-category G/M-code lists live under [`docs/`](docs/):
 [information](docs/information.md),
 [special](docs/special.md).
 Sample raw Marlin responses are in [`docs/marlin_cmd_rsp.md`](docs/marlin_cmd_rsp.md).
+
+### Binary file upload
+
+G-code files can be streamed to the printer's SD card over the WebSocket
+connection using Marlin's Binary File Transfer protocol (an `UploadBegin`
+message followed by raw binary frames). The handshake, the `UploadRequest`
+JSON schema, progress/result messages, and server-side limits are
+documented in [`docs/upload.md`](docs/upload.md).
 
 ### External docs
 
