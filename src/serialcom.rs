@@ -27,6 +27,34 @@ impl SerialConnection {
         info!("{}", response);
         Ok(response)
     }
+
+    /// Run `f` with the port's read timeout temporarily set to `dur`,
+    /// restoring the original timeout on exit. The binary-transfer
+    /// adapter expects short-timeout `TimedOut` to drive its retransmit
+    /// `tick()`; the default 1 s timeout would starve that loop.
+    ///
+    /// Generic over the closure's return type so callers can pass back a
+    /// domain-specific `Result` (e.g. `Result<UploadStats, UploadError>`)
+    /// without an extra layer of nesting. Failures to flip the timeout
+    /// are logged but not surfaced — degrading to the existing timeout
+    /// is preferable to aborting the upload.
+    pub fn with_short_read_timeout<F, R>(&mut self, dur: Duration, f: F) -> R
+    where
+        F: FnOnce(&mut dyn SerialPort) -> R,
+    {
+        let previous = self.port.timeout();
+        if let Err(e) = self.port.set_timeout(dur) {
+            debug!("set_timeout({:?}) failed: {}", dur, e);
+        }
+        // Drain unsolicited bytes before switching modes — leftover ASCII
+        // auto-reports would corrupt the binary handshake.
+        let _ = self.port.clear(ClearBuffer::Input);
+        let result = f(&mut *self.port);
+        if let Err(e) = self.port.set_timeout(previous) {
+            debug!("restore set_timeout({:?}) failed: {}", previous, e);
+        }
+        result
+    }
 }
 
 fn round_trip<P: Read + Write>(port: &mut P, cmd: &str) -> io::Result<String> {

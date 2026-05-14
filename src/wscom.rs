@@ -1,8 +1,10 @@
 use futures::{stream::StreamExt, SinkExt};
 use log::{debug, error, info, warn};
+use std::io::Cursor;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
     accept_async,
@@ -10,16 +12,35 @@ use tokio_tungstenite::{
 };
 use tungstenite::Message;
 
+use marlin_binary_transfer::adapters::blocking::{
+    upload as binary_upload, UploadError, UploadOptions, UploadStats,
+};
+use marlin_binary_transfer::file_transfer::Compression;
+
 use crate::commands::g_command;
 use crate::serialcom::SerialConnection;
 
 use crate::parser::{m105, m114, m115, m119, m20, m27, m31, m33};
-use crate::structs::MessageSender;
+use crate::structs::{MessageSender, UploadProgress, UploadRequest, UploadResult};
 use crate::Config;
 use crate::MessageType;
 use crate::MessageWS;
 
 type SharedSerial = Arc<Mutex<SerialConnection>>;
+pub type UploadInFlight = Arc<AtomicBool>;
+
+/// RAII guard that clears the upload-in-flight flag on drop. Constructed
+/// only after a successful `compare_exchange(false, true)` so it has
+/// exclusive ownership of the flag for its lifetime. Using a guard
+/// rather than manual `store(false)` calls means error short-circuits
+/// (`?` on a failing `send_message_back`) can't leak the flag.
+struct InFlightGuard(UploadInFlight);
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
 
 fn now_ts() -> u64 {
     SystemTime::now()
@@ -37,6 +58,54 @@ fn error_message(kind: &str, detail: &str) -> MessageSender {
     }
 }
 
+/// Server-side validation for `UploadRequest::dest_filename`. Marlin's
+/// SD layer allows up to 64 chars including the NUL terminator, so 63 is
+/// the usable cap. We also reject directory separators (no traversal)
+/// and require a recognised g-code extension.
+fn valid_dest_filename(name: &str) -> bool {
+    if name.is_empty() || name.len() > 63 {
+        return false;
+    }
+    if name.contains('/') || name.contains('\0') {
+        return false;
+    }
+    let lower = name.to_lowercase();
+    lower.ends_with(".gco") || lower.ends_with(".gcode") || lower.ends_with(".g")
+}
+
+/// Translate the request's compression string into a `Compression` value,
+/// returning `Err(reason)` if the requested mode isn't available in this
+/// build. The `heatshrink` feature gates everything except `"none"`.
+fn resolve_compression(requested: Option<&str>) -> std::result::Result<Compression, String> {
+    match requested.unwrap_or("none") {
+        "none" => Ok(Compression::None),
+        "heatshrink" => {
+            #[cfg(feature = "heatshrink")]
+            {
+                Ok(Compression::Heatshrink {
+                    window: 8,
+                    lookahead: 4,
+                })
+            }
+            #[cfg(not(feature = "heatshrink"))]
+            {
+                Err("compression unavailable: rebuild with --features heatshrink".into())
+            }
+        }
+        "auto" => {
+            #[cfg(feature = "heatshrink")]
+            {
+                Ok(Compression::Auto)
+            }
+            #[cfg(not(feature = "heatshrink"))]
+            {
+                Err("compression auto unavailable: rebuild with --features heatshrink".into())
+            }
+        }
+        other => Err(format!("unknown compression mode: {}", other)),
+    }
+}
+
 /**
  * Accept incoming connection from client
  * @param peer: SocketAddr, peer address
@@ -50,8 +119,9 @@ pub async fn accept_connection(
     stream: TcpStream,
     configuration: Config,
     serial: SharedSerial,
+    upload_in_flight: UploadInFlight,
 ) -> Result<(), Error> {
-    match handle_connection(peer, stream, configuration, serial).await {
+    match handle_connection(peer, stream, configuration, serial, upload_in_flight).await {
         Ok(_) => Ok(()),
         Err(e) => match e {
             Error::ConnectionClosed | Error::Protocol(_) | Error::Utf8 => Ok(()),
@@ -76,6 +146,7 @@ async fn handle_connection(
     stream: TcpStream,
     configuration: Config,
     serial: SharedSerial,
+    upload_in_flight: UploadInFlight,
 ) -> Result<(), Error> {
     let ws_stream = accept_async(stream)
         .await
@@ -423,6 +494,268 @@ async fn handle_connection(
                                 }
                             }
                         }
+                        MessageType::UploadBegin => {
+                            let req: UploadRequest = match serde_json::from_str(message.message) {
+                                Ok(r) => r,
+                                Err(e) => {
+                                    warn!("UploadBegin bad JSON from {}: {}", peer, e);
+                                    send_message_back(
+                                        error_message("UploadError", "invalid UploadRequest JSON"),
+                                        &mut ws_write,
+                                    )
+                                    .await?;
+                                    continue;
+                                }
+                            };
+                            if !valid_dest_filename(&req.dest_filename) {
+                                send_message_back(
+                                    error_message(
+                                        "UploadError",
+                                        "invalid dest_filename: must have no /, no NUL, <=63 chars, end in .gco/.gcode/.g",
+                                    ),
+                                    &mut ws_write,
+                                )
+                                .await?;
+                                continue;
+                            }
+                            if req.size == 0 || req.size > configuration.max_upload_bytes {
+                                send_message_back(
+                                    error_message(
+                                        "UploadError",
+                                        &format!(
+                                            "size {} out of range (1..={})",
+                                            req.size, configuration.max_upload_bytes
+                                        ),
+                                    ),
+                                    &mut ws_write,
+                                )
+                                .await?;
+                                continue;
+                            }
+                            let compression = match resolve_compression(req.compression.as_deref())
+                            {
+                                Ok(c) => c,
+                                Err(reason) => {
+                                    send_message_back(
+                                        error_message("UploadError", &reason),
+                                        &mut ws_write,
+                                    )
+                                    .await?;
+                                    continue;
+                                }
+                            };
+                            // Single-flight: only one upload at a time. Same
+                            // serial port, same mutex — concurrent uploads
+                            // would just block on each other, so reject fast
+                            // with a clear error instead.
+                            if upload_in_flight
+                                .compare_exchange(
+                                    false,
+                                    true,
+                                    Ordering::SeqCst,
+                                    Ordering::SeqCst,
+                                )
+                                .is_err()
+                            {
+                                send_message_back(
+                                    error_message(
+                                        "UploadError",
+                                        "another upload is already in progress",
+                                    ),
+                                    &mut ws_write,
+                                )
+                                .await?;
+                                continue;
+                            }
+                            // From this point on, the flag is owned by the
+                            // guard — any exit path (fall-through, continue,
+                            // or `?` propagation) resets it on drop.
+                            let _flag_guard = InFlightGuard(Arc::clone(&upload_in_flight));
+                            warn!(
+                                "Upload starting (peer={}, file={}, size={}); serial commands from other clients will block until completion",
+                                peer, req.dest_filename, req.size
+                            );
+                            send_message_back(
+                                MessageSender {
+                                    message_type: "UploadAck".to_string(),
+                                    message: "ready".to_string(),
+                                    raw_message: String::new(),
+                                    timestamp: now_ts(),
+                                },
+                                &mut ws_write,
+                            )
+                            .await?;
+
+                            // Collect binary frames until we've received `size` bytes.
+                            let mut buf: Vec<u8> = Vec::with_capacity(req.size as usize);
+                            let mut aborted = false;
+                            while (buf.len() as u64) < req.size {
+                                let frame = match ws_read.next().await {
+                                    Some(Ok(m)) => m,
+                                    Some(Err(e)) => {
+                                        warn!("WS read error during upload payload: {}", e);
+                                        aborted = true;
+                                        break;
+                                    }
+                                    None => {
+                                        warn!("Connection closed mid-upload");
+                                        aborted = true;
+                                        break;
+                                    }
+                                };
+                                if frame.is_close() {
+                                    aborted = true;
+                                    break;
+                                }
+                                if frame.is_ping() || frame.is_pong() {
+                                    continue;
+                                }
+                                if !frame.is_binary() {
+                                    send_message_back(
+                                        error_message(
+                                            "UploadError",
+                                            "expected binary frame during upload payload",
+                                        ),
+                                        &mut ws_write,
+                                    )
+                                    .await?;
+                                    aborted = true;
+                                    break;
+                                }
+                                let data = frame.into_data();
+                                let remaining = req.size - buf.len() as u64;
+                                if data.len() as u64 > remaining {
+                                    send_message_back(
+                                        error_message(
+                                            "UploadError",
+                                            "payload exceeded declared size",
+                                        ),
+                                        &mut ws_write,
+                                    )
+                                    .await?;
+                                    aborted = true;
+                                    break;
+                                }
+                                buf.extend_from_slice(&data);
+                            }
+                            if aborted {
+                                continue;
+                            }
+
+                            // Build options + mpsc-backed progress callback.
+                            let (prog_tx, mut prog_rx) =
+                                tokio::sync::mpsc::channel::<UploadProgress>(64);
+                            let dummy = req.dummy.unwrap_or(false);
+                            let chunk_size = req.chunk_size.unwrap_or(0);
+                            let dest_filename = req.dest_filename.clone();
+                            let opts = UploadOptions {
+                                dest_filename,
+                                compression,
+                                dummy,
+                                chunk_size,
+                                progress: Some(Box::new(move |p| {
+                                    // try_send so the serial loop never blocks on
+                                    // backpressure; dropping an event is fine.
+                                    let _ = prog_tx.try_send(UploadProgress {
+                                        bytes_sent: p.bytes_sent,
+                                        chunks_sent: p.chunks_sent,
+                                        source_bytes: p.source_bytes,
+                                    });
+                                })),
+                            };
+
+                            // Run the upload on a blocking thread while
+                            // forwarding progress events from this async
+                            // task. The lock is held for the entire upload
+                            // duration — other clients' serial commands queue.
+                            let serial_for_task = Arc::clone(&serial);
+                            let mut upload_handle = tokio::task::spawn_blocking(
+                                move || -> std::result::Result<UploadStats, UploadError> {
+                                    let mut conn = serial_for_task.lock().unwrap();
+                                    conn.with_short_read_timeout(
+                                        Duration::from_millis(100),
+                                        |port| binary_upload(port, Cursor::new(buf), opts),
+                                    )
+                                },
+                            );
+
+                            let upload_result = loop {
+                                tokio::select! {
+                                    Some(prog) = prog_rx.recv() => {
+                                        let body = serde_json::to_string(&prog)
+                                            .unwrap_or_else(|_| String::from("{}"));
+                                        send_message_back(
+                                            MessageSender {
+                                                message_type: "UploadProgress".to_string(),
+                                                message: body,
+                                                raw_message: String::new(),
+                                                timestamp: now_ts(),
+                                            },
+                                            &mut ws_write,
+                                        )
+                                        .await?;
+                                    }
+                                    join = &mut upload_handle => {
+                                        // Drain any progress events buffered
+                                        // before the task finished.
+                                        while let Ok(prog) = prog_rx.try_recv() {
+                                            let body = serde_json::to_string(&prog)
+                                                .unwrap_or_else(|_| String::from("{}"));
+                                            send_message_back(
+                                                MessageSender {
+                                                    message_type: "UploadProgress".to_string(),
+                                                    message: body,
+                                                    raw_message: String::new(),
+                                                    timestamp: now_ts(),
+                                                },
+                                                &mut ws_write,
+                                            )
+                                            .await?;
+                                        }
+                                        break join;
+                                    }
+                                }
+                            };
+
+                            match upload_result {
+                                Ok(Ok(stats)) => {
+                                    let result_payload = UploadResult {
+                                        source_bytes: stats.source_bytes,
+                                        bytes_sent: stats.bytes_sent,
+                                        chunks_sent: stats.chunks_sent,
+                                        compression: format!("{:?}", stats.compression),
+                                    };
+                                    let body = serde_json::to_string(&result_payload)
+                                        .unwrap_or_else(|_| String::from("{}"));
+                                    send_message_back(
+                                        MessageSender {
+                                            message_type: "UploadDone".to_string(),
+                                            message: body,
+                                            raw_message: String::new(),
+                                            timestamp: now_ts(),
+                                        },
+                                        &mut ws_write,
+                                    )
+                                    .await?;
+                                }
+                                Ok(Err(upload_err)) => {
+                                    error!("Upload failed: {}", upload_err);
+                                    send_message_back(
+                                        error_message("UploadError", &upload_err.to_string()),
+                                        &mut ws_write,
+                                    )
+                                    .await?;
+                                }
+                                Err(join_err) => {
+                                    error!("Upload blocking task panicked: {}", join_err);
+                                    send_message_back(
+                                        error_message("UploadError", "upload task crashed"),
+                                        &mut ws_write,
+                                    )
+                                    .await?;
+                                }
+                            }
+                        }
                     }
                 }
                 Err(e) => {
@@ -439,4 +772,73 @@ async fn handle_connection(
 
     info!("Connection lost for {}", peer);
     Err(Error::ConnectionClosed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn valid_dest_filename_accepts_canonical_extensions() {
+        assert!(valid_dest_filename("part.gco"));
+        assert!(valid_dest_filename("PART.GCODE"));
+        assert!(valid_dest_filename("a.g"));
+        assert!(valid_dest_filename("Some_File-01.GCo"));
+    }
+
+    #[test]
+    fn valid_dest_filename_rejects_bad_inputs() {
+        assert!(!valid_dest_filename(""), "empty rejected");
+        assert!(!valid_dest_filename("noext"), "no extension rejected");
+        assert!(!valid_dest_filename("foo.txt"), "wrong extension rejected");
+        assert!(!valid_dest_filename("foo/bar.gco"), "slash rejected");
+        assert!(
+            !valid_dest_filename("nul\0byte.gco"),
+            "embedded NUL rejected"
+        );
+        let too_long = format!("{}.gco", "x".repeat(60)); // 60 + 4 = 64 chars
+        assert!(!valid_dest_filename(&too_long), ">63 chars rejected");
+    }
+
+    #[test]
+    fn valid_dest_filename_accepts_63_char_edge() {
+        let name = format!("{}.gco", "x".repeat(59)); // 59 + 4 = 63 chars
+        assert_eq!(name.len(), 63);
+        assert!(valid_dest_filename(&name));
+    }
+
+    #[test]
+    fn resolve_compression_none_always_works() {
+        assert!(matches!(
+            resolve_compression(Some("none")),
+            Ok(Compression::None)
+        ));
+        assert!(matches!(resolve_compression(None), Ok(Compression::None)));
+    }
+
+    #[test]
+    fn resolve_compression_unknown_errors() {
+        assert!(resolve_compression(Some("lzma")).is_err());
+        assert!(resolve_compression(Some("")).is_err());
+    }
+
+    #[cfg(feature = "heatshrink")]
+    #[test]
+    fn resolve_compression_heatshrink_modes_with_feature() {
+        assert!(matches!(
+            resolve_compression(Some("heatshrink")),
+            Ok(Compression::Heatshrink { .. })
+        ));
+        assert!(matches!(
+            resolve_compression(Some("auto")),
+            Ok(Compression::Auto)
+        ));
+    }
+
+    #[cfg(not(feature = "heatshrink"))]
+    #[test]
+    fn resolve_compression_heatshrink_modes_without_feature() {
+        assert!(resolve_compression(Some("heatshrink")).is_err());
+        assert!(resolve_compression(Some("auto")).is_err());
+    }
 }

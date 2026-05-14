@@ -4,6 +4,7 @@ use std::env;
 
 const DEFAULT_BIND_ADDR: &str = "127.0.0.1";
 const DEFAULT_MAX_CLIENTS: usize = 8;
+const DEFAULT_MAX_UPLOAD_BYTES: u64 = 64 * 1024 * 1024;
 
 pub fn get_configuration(args: Vec<String>) -> Config {
     // Set defaults in case arguments are not provided
@@ -15,6 +16,7 @@ pub fn get_configuration(args: Vec<String>) -> Config {
         bind_addr: DEFAULT_BIND_ADDR.to_string(),
         auth_token: None,
         max_clients: DEFAULT_MAX_CLIENTS,
+        max_upload_bytes: DEFAULT_MAX_UPLOAD_BYTES,
     };
 
     if args.len() > 4 {
@@ -54,6 +56,15 @@ pub fn get_configuration(args: Vec<String>) -> Config {
             ),
         }
     }
+    if let Ok(max) = env::var("XCONTROLLER_MAX_UPLOAD_BYTES") {
+        match max.parse::<u64>() {
+            Ok(n) if n > 0 => configuration.max_upload_bytes = n,
+            _ => warn!(
+                "Invalid XCONTROLLER_MAX_UPLOAD_BYTES={}, using default {}",
+                max, DEFAULT_MAX_UPLOAD_BYTES
+            ),
+        }
+    }
 
     if configuration.bind_addr != "127.0.0.1"
         && configuration.bind_addr != "localhost"
@@ -82,6 +93,7 @@ mod tests {
         env::remove_var("XCONTROLLER_BIND_ADDR");
         env::remove_var("XCONTROLLER_AUTH_TOKEN");
         env::remove_var("XCONTROLLER_MAX_CLIENTS");
+        env::remove_var("XCONTROLLER_MAX_UPLOAD_BYTES");
     }
 
     #[test]
@@ -99,6 +111,7 @@ mod tests {
         assert_eq!(config.bind_addr, "127.0.0.1");
         assert!(config.auth_token.is_none());
         assert_eq!(config.max_clients, DEFAULT_MAX_CLIENTS);
+        assert_eq!(config.max_upload_bytes, DEFAULT_MAX_UPLOAD_BYTES);
     }
 
     #[test]
@@ -148,13 +161,27 @@ mod tests {
         env::set_var("XCONTROLLER_BIND_ADDR", "0.0.0.0");
         env::set_var("XCONTROLLER_AUTH_TOKEN", "s3cret");
         env::set_var("XCONTROLLER_MAX_CLIENTS", "16");
+        env::set_var("XCONTROLLER_MAX_UPLOAD_BYTES", "1048576");
 
         let config = get_configuration(vec![]);
 
         assert_eq!(config.bind_addr, "0.0.0.0");
         assert_eq!(config.auth_token.as_deref(), Some("s3cret"));
         assert_eq!(config.max_clients, 16);
+        assert_eq!(config.max_upload_bytes, 1_048_576);
 
+        clear_env();
+    }
+
+    #[test]
+    fn test_max_upload_bytes_invalid_falls_back_to_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_env();
+        env::set_var("XCONTROLLER_MAX_UPLOAD_BYTES", "not-a-number");
+
+        let config = get_configuration(vec![]);
+
+        assert_eq!(config.max_upload_bytes, DEFAULT_MAX_UPLOAD_BYTES);
         clear_env();
     }
 

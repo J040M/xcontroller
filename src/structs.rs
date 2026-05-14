@@ -11,6 +11,12 @@ pub enum MessageType {
     /// `message` carries the shared secret; the server replies with an
     /// "Auth" MessageSender (`message: "ok"` on success, `"fail"` otherwise).
     Auth,
+    /// Begin a binary-mode SD-card upload. `message` carries a JSON
+    /// `UploadRequest`. The server replies with an "UploadAck" message,
+    /// then expects the file body to arrive as raw WebSocket binary
+    /// frames totaling `UploadRequest::size` bytes. While the upload is
+    /// running other commands queue on the serial mutex.
+    UploadBegin,
 }
 
 /// Used for received messages
@@ -93,6 +99,53 @@ pub struct Config {
     pub bind_addr: String,
     pub auth_token: Option<String>,
     pub max_clients: usize,
+    /// Maximum accepted upload payload in bytes. Set via
+    /// `XCONTROLLER_MAX_UPLOAD_BYTES`; defaults to 64 MiB to match the
+    /// tungstenite default frame size ceiling.
+    pub max_upload_bytes: u64,
+}
+
+/// Client → server payload accompanying a `MessageType::UploadBegin`.
+/// The `message` field of the outer `MessageWS` is the JSON-encoded form
+/// of this struct.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UploadRequest {
+    /// Destination filename on the printer's SD card. Validated server-side:
+    /// no `/`, no NUL, ≤ 63 chars, ending in `.gco`/`.gcode`/`.g`.
+    pub dest_filename: String,
+    /// Total bytes the client will send as binary frames after the
+    /// UploadAck. Validated against `Config::max_upload_bytes`.
+    pub size: u64,
+    /// Optional compression mode: `"none"`, `"heatshrink"`, or `"auto"`.
+    /// Defaults to `"none"`. `"heatshrink"`/`"auto"` require the
+    /// `heatshrink` Cargo feature.
+    #[serde(default)]
+    pub compression: Option<String>,
+    /// When true, the device pretends to receive the file without writing
+    /// it (Marlin's M28 B1 dummy mode) — useful for protocol smoke tests.
+    #[serde(default)]
+    pub dummy: Option<bool>,
+    /// Bytes per WRITE packet. `None` or `Some(0)` means "use the
+    /// device-advertised maximum from SYNC".
+    #[serde(default)]
+    pub chunk_size: Option<usize>,
+}
+
+/// Per-chunk progress payload sent back to the client during an upload.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UploadProgress {
+    pub bytes_sent: u64,
+    pub chunks_sent: u64,
+    pub source_bytes: u64,
+}
+
+/// Final summary sent on successful upload completion.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UploadResult {
+    pub source_bytes: u64,
+    pub bytes_sent: u64,
+    pub chunks_sent: u64,
+    pub compression: String,
 }
 
 // Used for sending messages back to clients

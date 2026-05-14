@@ -2,6 +2,7 @@ use log::{error, info, warn};
 use simplelog::*;
 use std::env;
 use std::fs::{self, File};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::TcpListener;
@@ -71,6 +72,10 @@ async fn main() {
         .expect("TCP fail to open connection");
 
     let connection_limit = Arc::new(Semaphore::new(configuration.max_clients));
+    // Process-global single-flight flag: only one upload at a time, since
+    // there's only one serial port and the upload holds it for the full
+    // duration anyway.
+    let upload_in_flight = Arc::new(AtomicBool::new(false));
 
     // Listen for incoming connections
     while let Ok((stream, _)) = listener.accept().await {
@@ -94,11 +99,18 @@ async fn main() {
 
         let cloned_configuration = configuration.clone();
         let cloned_serial = Arc::clone(&serial);
+        let cloned_upload_flag = Arc::clone(&upload_in_flight);
 
         tokio::spawn(async move {
             let _permit = permit;
-            if let Err(e) =
-                accept_connection(peer, stream, cloned_configuration, cloned_serial).await
+            if let Err(e) = accept_connection(
+                peer,
+                stream,
+                cloned_configuration,
+                cloned_serial,
+                cloned_upload_flag,
+            )
+            .await
             {
                 error!("Connection error from {}: {}", peer, e);
             }
