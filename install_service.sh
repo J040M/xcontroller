@@ -2,8 +2,22 @@
 set -euo pipefail
 
 # Variables
-GITHUB_RELEASE_URL="https://github.com/J040M/xcontroller/releases/latest/download/xcontroller"
 SERVICE_NAME="xcontroller"
+
+# Releases publish one binary per architecture (xcontroller-x86_64 and
+# xcontroller-aarch64); there is no plain "xcontroller" asset, so pick the
+# one matching this machine.
+case "$(uname -m)" in
+  x86_64|amd64)   RELEASE_ASSET="xcontroller-x86_64" ;;
+  aarch64|arm64)  RELEASE_ASSET="xcontroller-aarch64" ;;
+  *)
+    echo "Error: unsupported architecture '$(uname -m)'."
+    echo "Releases provide xcontroller-x86_64 and xcontroller-aarch64 only."
+    exit 1
+    ;;
+esac
+
+GITHUB_RELEASE_URL="https://github.com/J040M/xcontroller/releases/latest/download/${RELEASE_ASSET}"
 BIN_PATH="/usr/local/bin/${SERVICE_NAME}"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 TEMP_DIR="$(mktemp -d -t "${SERVICE_NAME}.XXXXXX")"
