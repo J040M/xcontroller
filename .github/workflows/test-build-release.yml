@@ -2,7 +2,9 @@ name: test-build-release
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master, develop ]
   workflow_dispatch:
 
 permissions:
@@ -13,7 +15,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -28,7 +30,7 @@ jobs:
         run: sudo apt-get install -y libudev-dev
 
       - name: Run format
-        run: cargo fmt --verbose
+        run: cargo fmt --check --verbose
   
       - name: Run clippy
         run: cargo clippy --verbose
@@ -47,7 +49,7 @@ jobs:
     needs: test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -68,7 +70,7 @@ jobs:
         run: cargo build --verbose --release --features heatshrink --target x86_64-unknown-linux-gnu
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-artifacts-x86_64
           path: target/x86_64-unknown-linux-gnu/release/xcontroller
@@ -79,7 +81,7 @@ jobs:
     needs: test
     
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -99,7 +101,7 @@ jobs:
         run: cargo build --verbose --release --features heatshrink --target aarch64-unknown-linux-gnu
         
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-artifacts-aarch64
           path: target/aarch64-unknown-linux-gnu/release/xcontroller
@@ -108,8 +110,10 @@ jobs:
   release:
     needs: [build-x86_64, build-aarch64]
     runs-on: ubuntu-latest
+    # Only master publishes releases; develop pushes and PRs stop after build.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Get version from Cargo.toml
         id: get_version
@@ -118,45 +122,32 @@ jobs:
 
       # Download build artifacts for each architecture
       - name: Download build artifacts for x86_64
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-artifacts-x86_64
           path: target/x86_64-unknown-linux-gnu/release
 
       - name: Download build artifacts for aarch64
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-artifacts-aarch64
           path: target/aarch64-unknown-linux-gnu/release
 
+      # action-gh-release uploads each file under its on-disk name, and both
+      # builds produce a binary called `xcontroller`. Rename them first so the
+      # published asset names stay xcontroller-x86_64 / xcontroller-aarch64.
+      - name: Stage release assets
+        run: |
+          mkdir -p release-assets
+          cp target/x86_64-unknown-linux-gnu/release/xcontroller release-assets/xcontroller-x86_64
+          cp target/aarch64-unknown-linux-gnu/release/xcontroller release-assets/xcontroller-aarch64
+          chmod +x release-assets/*
+
       - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.get_version.outputs.version }}
-          release_name: Release v${{ steps.get_version.outputs.version }}
+          name: Release v${{ steps.get_version.outputs.version }}
           draft: false
           prerelease: false
-
-      - name: Upload x86_64 Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: target/x86_64-unknown-linux-gnu/release/xcontroller
-          asset_name: xcontroller-x86_64
-          asset_content_type: application/octet-stream
-
-      - name: Upload aarch64 Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: target/aarch64-unknown-linux-gnu/release/xcontroller
-          asset_name: xcontroller-aarch64
-          asset_content_type: application/octet-stream
-          
+          files: release-assets/*

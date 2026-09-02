@@ -168,7 +168,7 @@ mod tests {
     fn test_write_to_port_success() {
         let mut buffer = Vec::new();
         let command = b"test command";
-        let _result = write_to_port(&mut buffer, command).unwrap();
+        write_to_port(&mut buffer, command).unwrap();
         assert_eq!(buffer, command);
     }
 
@@ -177,7 +177,7 @@ mod tests {
         struct ErrorWriter;
         impl Write for ErrorWriter {
             fn write(&mut self, _: &[u8]) -> io::Result<usize> {
-                Err(io::Error::new(io::ErrorKind::Other, "write error"))
+                Err(io::Error::other("write error"))
             }
 
             fn flush(&mut self) -> io::Result<()> {
