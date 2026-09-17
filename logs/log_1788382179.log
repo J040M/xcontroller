@@ -1,0 +1,3 @@
+20:49:39 [INFO] Starting xcontroller...
+20:49:39 [INFO] Listening on 0.0.0.0:9002
+20:49:39 [INFO] Running with config: Config { test_mode: false, serial_port: "/dev/ttyUSB0", baud_rate: 115200, ws_port: "9002" }

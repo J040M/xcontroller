@@ -1,49 +1,54 @@
 #!/bin/bash
+set -euo pipefail
 
-BIN_PATH="/usr/local/"  # Path where the binary is installed
-SERVICE_NAME="xcontroller" # The name of the systemd service (e.g. "my_service")
-SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME.service"  # Path to the systemd service file
+SERVICE_NAME="xcontroller"
+BIN_PATH="/usr/local/bin/${SERVICE_NAME}"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+SERVICE_USER="${SERVICE_NAME}"
+ENV_DIR="/etc/xcontroller"
 
-# 1. Stop the service
-echo "Stopping the service..."
-sudo systemctl stop $SERVICE_NAME
-if [ $? -ne 0 ]; then
-  echo "Error: Failed to stop service $SERVICE_NAME"
-  exit 1
+# 1. Stop the service if running (don't fail if it isn't)
+if systemctl is-active --quiet "${SERVICE_NAME}"; then
+  echo "Stopping the service..."
+  sudo systemctl stop "${SERVICE_NAME}"
 fi
 
-# 2. Disable the service (prevent it from starting at boot)
+# 2. Disable it (ignore failure if it was never enabled)
 echo "Disabling the service..."
-sudo systemctl disable $SERVICE_NAME
-if [ $? -ne 0 ]; then
-  echo "Error: Failed to disable service $SERVICE_NAME"
-  exit 1
+sudo systemctl disable "${SERVICE_NAME}" 2>/dev/null || true
+
+# 3. Remove the unit file
+if [ -f "${SERVICE_FILE}" ]; then
+  echo "Removing ${SERVICE_FILE}..."
+  sudo rm -f "${SERVICE_FILE}"
 fi
 
-# 3. Remove the systemd service file
-echo "Removing the service file..."
-sudo rm -f $SERVICE_FILE
-if [ $? -ne 0 ]; then
-  echo "Error: Failed to remove service file $SERVICE_FILE"
-  exit 1
-fi
-
-# 4. Reload systemd to remove references to the deleted service
-echo "Reloading systemd..."
+# 4. Reload systemd
 sudo systemctl daemon-reload
 
-# 5. (Optional) Remove the binary
-echo "Do you want to remove the binary ($BIN_PATH)? (y/n)"
-read -r REMOVE_BINARY
-if [ "$REMOVE_BINARY" == "y" ]; then
-  echo "Removing the binary..."
-  sudo rm -f $BIN_PATH
-  if [ $? -ne 0 ]; then
-    echo "Error: Failed to remove binary $BIN_PATH"
-    exit 1
+# 5. Optionally remove the binary
+if [ -f "${BIN_PATH}" ]; then
+  read -r -p "Remove the binary at ${BIN_PATH}? [y/N] " REMOVE_BINARY
+  if [ "${REMOVE_BINARY:-n}" = "y" ] || [ "${REMOVE_BINARY:-n}" = "Y" ]; then
+    sudo rm -f "${BIN_PATH}"
+    echo "Removed ${BIN_PATH}"
   fi
 fi
 
-# Success message
-echo "Service $SERVICE_NAME has been uninstalled successfully!"
+# 6. Optionally remove the service user (only if no other files belong to it)
+if id -u "${SERVICE_USER}" >/dev/null 2>&1; then
+  read -r -p "Remove the service user '${SERVICE_USER}'? [y/N] " REMOVE_USER
+  if [ "${REMOVE_USER:-n}" = "y" ] || [ "${REMOVE_USER:-n}" = "Y" ]; then
+    sudo userdel "${SERVICE_USER}" || true
+  fi
+fi
 
+# 7. Optionally remove the env directory (may contain the auth token)
+if [ -d "${ENV_DIR}" ]; then
+  read -r -p "Remove ${ENV_DIR} (may contain XCONTROLLER_AUTH_TOKEN)? [y/N] " REMOVE_ENV
+  if [ "${REMOVE_ENV:-n}" = "y" ] || [ "${REMOVE_ENV:-n}" = "Y" ]; then
+    sudo rm -rf "${ENV_DIR}"
+  fi
+fi
+
+echo "Service ${SERVICE_NAME} uninstalled."

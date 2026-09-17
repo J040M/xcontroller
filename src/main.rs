@@ -1,9 +1,12 @@
-use log::{error, info};
+use log::{error, info, warn};
 use simplelog::*;
 use std::env;
 use std::fs::{self, File};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 
 mod commands;
 mod configuration;
@@ -13,6 +16,7 @@ mod structs;
 mod wscom;
 
 use crate::configuration::get_configuration;
+use crate::serialcom::SerialConnection;
 use crate::structs::{Config, MessageType, MessageWS};
 use crate::wscom::accept_connection;
 
@@ -26,26 +30,88 @@ async fn main() {
     let args: Vec<String> = env::args().collect();
     let configuration = get_configuration(args);
 
-    let addr = format!("0.0.0.0:{}", configuration.ws_port);
+    let addr = format!("{}:{}", configuration.bind_addr, configuration.ws_port);
 
     info!("Listening on {}", addr);
-    info!("Running with config: {:?}", configuration);
+    // Don't dump auth_token into logs — Debug-print a sanitized view.
+    info!(
+        "Running with config: serial_port={} baud_rate={} ws_port={} bind_addr={} max_clients={} test_mode={} auth={}",
+        configuration.serial_port,
+        configuration.baud_rate,
+        configuration.ws_port,
+        configuration.bind_addr,
+        configuration.max_clients,
+        configuration.test_mode,
+        if configuration.auth_token.is_some() { "enabled" } else { "disabled" },
+    );
+
+    // Open the serial port once at startup. Sharing a single handle across
+    // connections avoids EBUSY when max_clients > 1 and is a prerequisite for
+    // any future SD-upload (M28/M29) which needs the port held open across
+    // many writes. Failing fast here is correct: a controller without a
+    // printer is useless, and systemd will retry until the device appears.
+    let serial = match SerialConnection::open(&configuration.serial_port, configuration.baud_rate) {
+        Ok(s) => {
+            info!(
+                "Serial port {} opened at {} baud",
+                configuration.serial_port, configuration.baud_rate
+            );
+            Arc::new(Mutex::new(s))
+        }
+        Err(e) => {
+            error!(
+                "Failed to open serial port {}: {}",
+                configuration.serial_port, e
+            );
+            std::process::exit(1);
+        }
+    };
 
     let listener = TcpListener::bind(&addr)
         .await
         .expect("TCP fail to open connection");
 
-    // Start serial connection and listen for incoming connections
+    let connection_limit = Arc::new(Semaphore::new(configuration.max_clients));
+    // Process-global single-flight flag: only one upload at a time, since
+    // there's only one serial port and the upload holds it for the full
+    // duration anyway.
+    let upload_in_flight = Arc::new(AtomicBool::new(false));
+
+    // Listen for incoming connections
     while let Ok((stream, _)) = listener.accept().await {
         let peer = stream
             .peer_addr()
             .expect("Connected peers should have an address");
 
-        let cloned_configuration = configuration.clone();
+        // Cap concurrent clients. try_acquire avoids backing the accept loop
+        // up if a connection burst arrives — we'd rather refuse fast.
+        let permit = match connection_limit.clone().try_acquire_owned() {
+            Ok(p) => p,
+            Err(_) => {
+                warn!(
+                    "Refusing connection from {}: max_clients={} reached",
+                    peer, configuration.max_clients
+                );
+                drop(stream);
+                continue;
+            }
+        };
 
-        // Spawn a new thread for each connection for async handling
+        let cloned_configuration = configuration.clone();
+        let cloned_serial = Arc::clone(&serial);
+        let cloned_upload_flag = Arc::clone(&upload_in_flight);
+
         tokio::spawn(async move {
-            if let Err(e) = accept_connection(peer, stream, cloned_configuration).await {
+            let _permit = permit;
+            if let Err(e) = accept_connection(
+                peer,
+                stream,
+                cloned_configuration,
+                cloned_serial,
+                cloned_upload_flag,
+            )
+            .await
+            {
                 error!("Connection error from {}: {}", peer, e);
             }
         });

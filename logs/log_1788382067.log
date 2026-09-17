@@ -1,0 +1,4 @@
+20:47:47 [INFO] Starting xcontroller...
+20:47:47 [INFO] Listening on 127.0.0.1:9099
+20:47:47 [INFO] Running with config: serial_port=/dev/null baud_rate=115200 ws_port=9099 bind_addr=127.0.0.1 max_clients=8 test_mode=true auth=disabled
+20:47:47 [ERROR] Failed to open serial port /dev/null: Not a typewriter

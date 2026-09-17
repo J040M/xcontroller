@@ -30,11 +30,17 @@ jobs:
       - name: Run format
         run: cargo fmt --verbose
   
-      - name: Run clippy 
+      - name: Run clippy
         run: cargo clippy --verbose
+
+      - name: Run clippy (heatshrink)
+        run: cargo clippy --verbose --features heatshrink
 
       - name: Run tests
         run: cargo test --verbose
+
+      - name: Run tests (heatshrink)
+        run: cargo test --verbose --features heatshrink
 
   build-x86_64:
     runs-on: ubuntu-latest
@@ -59,7 +65,7 @@ jobs:
           rustup target add x86_64-unknown-linux-gnu || true
           
       - name: Build
-        run: cargo build --verbose --release --target x86_64-unknown-linux-gnu
+        run: cargo build --verbose --release --features heatshrink --target x86_64-unknown-linux-gnu
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -90,7 +96,7 @@ jobs:
         run: rustup target add aarch64-unknown-linux-gnu || true
 
       - name: Build
-        run: cargo build --verbose --release --target aarch64-unknown-linux-gnu
+        run: cargo build --verbose --release --features heatshrink --target aarch64-unknown-linux-gnu
         
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

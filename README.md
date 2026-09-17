@@ -2,64 +2,193 @@
 
 <img src=".github/logo.png" alt="xcontroller logo" width="400"/>
 
-3D controller written in Rust. Serialcom to send commands to the main board. Websocket server for communication with the controller.
+A 3D-printer controller written in Rust. It bridges a serial connection to the
+printer's main board and exposes a WebSocket server so clients can drive the
+printer, read back status, and upload G-code to the SD card.
 
-## Usage
+## Features
 
-1. Compile the Rust program using Cargo:
+- **Serial bridge** — sends validated G/M/T-code to a Marlin board and reads
+  back responses.
+- **WebSocket server** — JSON message protocol for commands and responses, with
+  structured parsing of common status replies (temperatures, position,
+  endstops, firmware info, SD listing).
+- **Authentication** — optional shared-token handshake gating every connection.
+- **Concurrency limits** — caps simultaneous clients and refuses excess
+  connections at accept time.
+- **Binary SD-card upload** — streams G-code files to the printer using Marlin's
+  Binary File Transfer protocol, with optional `heatshrink` compression.
+- **Command allow-list** — only known-safe G/M/T codes reach the printer;
+  dangerous ones (e.g. `M997` firmware flash) are blocked.
+- **Runs as a service** — systemd unit and installer, running as a dedicated
+  unprivileged user.
 
-```cargo build --release```
+## Build
 
-2. Run the application - Development
+```
+cargo build --release
+```
 
-```cargo run -- <test_mode_boolean>```
-```RUST_LOG=debug cargo run -- <test_mode_boolean>```
-Windows: ``` $env:RUST_LOG="debug"; cargo run```
+To enable `heatshrink`/`auto` compression for binary SD-card uploads, build with
+the optional feature:
 
-Execute binary
-```./xcontroller -- <test_mode_boolean>```
+```
+cargo build --release --features heatshrink
+```
 
-3. Run the application with defined params
-``` ./xcontroller -- <websocket_port_value> <serial_port_string> <baudrate_value> <test_mode_boolean>```
+## Run
 
-Note:
-Running the program without params it will fallback to default values.
+During development:
 
-Default configurations:
-``` Config { test_mode: false, serial_port: /dev/ttyUSB0, baud_rate: 115200, ws_port: 9002} ```
+```
+cargo run
+RUST_LOG=debug cargo run
+```
 
-4. Install or update as a service
-This will allow the service to restart with the correct params on reboot
+Windows: `$env:RUST_LOG="debug"; cargo run`
 
-```./install_service.sh 8080 "/dev/ttyUSB0" 115200 true```
+The release binary takes either no arguments (all defaults) or all four
+positional arguments:
 
-Note on how to make the script executable:
-```chmod +x install_service.sh```
+```
+./xcontroller <websocket_port> <serial_port> <baudrate> <test_mode>
+./xcontroller 9002 /dev/ttyUSB0 115200 false
+```
 
+Passing fewer than four arguments silently falls back to the defaults:
 
-Start/Restart or stop the service:
-```systemctl start/restart/stop xcontroller ```
+```
+Config {
+    test_mode: false,
+    serial_port: "/dev/ttyUSB0",
+    baud_rate: 115200,
+    ws_port: "9002",
+    bind_addr: "127.0.0.1",
+    auth_token: None,
+    max_clients: 8,
+    max_upload_bytes: 67108864,
+}
+```
 
-Enable or disable the service
-```systemctl enable/disable xcontroller ```
+## Configuration
 
-See the logs
-```journalctl -u xcontroller```
+Security and concurrency knobs are read from environment variables, so the
+positional CLI and the systemd unit stay unchanged:
 
-### Commands
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `XCONTROLLER_BIND_ADDR` | `127.0.0.1` | Listen address. Set to `0.0.0.0` for LAN access. The daemon logs a warning if you bind to a non-loopback address without setting `XCONTROLLER_AUTH_TOKEN`. |
+| `XCONTROLLER_AUTH_TOKEN` | unset | Shared secret enabling the auth handshake (see [Authentication](#authentication)). Empty string is treated as unset. |
+| `XCONTROLLER_MAX_CLIENTS` | `8` | Maximum concurrent WebSocket clients. Extra connections are refused at accept time. |
+| `XCONTROLLER_MAX_UPLOAD_BYTES` | `67108864` (64 MiB) | Maximum accepted binary upload payload. `UploadBegin` requests larger than this are rejected. |
 
-- Operation: Control the activity of the machine. Includes start/stop operation, pause/resume operation.
+## Install as a service
 
-- Movement: Control the movement of the machine or tool, such as it's speed, location, or direction.
+Installs xcontroller as a systemd service so it restarts with the correct
+parameters on reboot:
 
-- Tools: Control the machine's tools, like tool selection, tool changer operation, speed/spindle control.
+```
+chmod +x install_service.sh
+./install_service.sh 8080 "/dev/ttyUSB0" 115200 true
+```
 
-- Config: Configure the machine, such as setting feed rate, units of measurement, or endstop behaviour.
+The installer creates a dedicated unprivileged `xcontroller` user (in the
+`dialout` group for serial access) and writes a systemd unit that reads optional
+environment variables from `/etc/xcontroller/xcontroller.env` (chmod `0600`):
 
-- Information: Output information about the machine or its status.
+```
+XCONTROLLER_BIND_ADDR=0.0.0.0
+XCONTROLLER_AUTH_TOKEN=<a-long-random-string>
+XCONTROLLER_MAX_CLIENTS=8
+XCONTROLLER_MAX_UPLOAD_BYTES=67108864
+```
 
-- Special: All commands that don't fit into the other categories and perform specific unique functions.
+Manage the service:
 
-### External docs
+```
+sudo systemctl start|restart|stop xcontroller
+sudo systemctl enable|disable xcontroller
+journalctl -u xcontroller -f
+```
 
-- Marlin GCode docs: https://marlinfw.org/meta/gcode/
+## WebSocket protocol
+
+Clients exchange JSON text frames with the server.
+
+### Message envelope
+
+**Client → server** (`MessageWS`):
+
+```json
+{ "message_type": "<type>", "message": "<payload>" }
+```
+
+**Server → client** (`MessageSender`):
+
+```json
+{ "message_type": "<type>", "message": "<parsed>", "raw_message": "<raw>", "timestamp": 1700000000 }
+```
+
+`timestamp` is Unix epoch seconds.
+
+### Authentication
+
+When `XCONTROLLER_AUTH_TOKEN` is set, the **first** message on every new
+connection must be:
+
+```json
+{ "message_type": "Auth", "message": "<token>" }
+```
+
+The server replies with an `Auth` message — `message: "ok"` on success,
+`"fail"` otherwise — and closes the connection on failure. After a successful
+handshake the rest of the protocol works normally; sending `Auth` again later is
+rejected. When no token is configured, no handshake is required.
+
+### Message types
+
+| `message_type` | `message` payload | Behaviour |
+|----------------|-------------------|-----------|
+| `GCommand` | a G/M/T-code, e.g. `M105` | Validated against the command allow-list and sent to the printer. The reply's `message_type` is the command, `raw_message` is the raw serial response, and `message` is structured JSON for `M20`, `M27`, `M31`, `M33`, `M105`, `M114`, `M115`, `M119` (raw text otherwise, empty when the printer reply is just `ok`). |
+| `Terminal` | a G/M/T-code | Same allow-list validation as `GCommand`; the reply's `message_type` is `terminal` with the raw response in `message`. |
+| `Unsafe` | a G/M/T-code | Currently validated against the same allow-list as `GCommand`/`Terminal`; the reply's `message_type` is `Unsafe`. |
+| `SerialConfig` | — | Reserved for runtime serial reconfiguration; not yet implemented. |
+| `Auth` | token | Only valid as the first message — see [Authentication](#authentication). |
+| `UploadBegin` | JSON `UploadRequest` | Starts a binary SD-card upload — see [Binary file upload](#binary-file-upload). |
+
+Only known-safe G/M/T codes are accepted; dangerous commands such as `M997`
+(firmware flash) are deliberately excluded from the allow-list. Invalid JSON,
+disallowed commands, and protocol misuse are answered with a `MessageSenderError`
+(or `UploadError` during an upload).
+
+### Binary file upload
+
+G-code files can be streamed to the printer's SD card using Marlin's Binary File
+Transfer protocol: an `UploadBegin` message, followed by raw binary WebSocket
+frames, with progress and result messages streamed back. The handshake, the
+`UploadRequest` JSON schema, and server-side limits are documented in
+[`docs/upload.md`](docs/upload.md).
+
+## Commands
+
+G/M-code reference, grouped by purpose:
+
+- **Operation** — start/stop and pause/resume machine activity.
+- **Movement** — speed, location, and direction of the machine or tool.
+- **Tools** — tool selection, tool changer operation, spindle/speed control.
+- **Config** — feed rate, units of measurement, endstop behaviour.
+- **Information** — machine and status output.
+- **Special** — commands that don't fit the other categories.
+
+Per-category lists live under [`docs/`](docs/):
+[operation](docs/operation.md),
+[movement](docs/movement.md),
+[tool](docs/tool.md),
+[config](docs/config.md),
+[information](docs/information.md),
+[special](docs/special.md).
+Sample raw Marlin responses are in [`docs/marlin_cmd_rsp.md`](docs/marlin_cmd_rsp.md).
+
+## External docs
+
+- Marlin G-code reference: https://marlinfw.org/meta/gcode/
